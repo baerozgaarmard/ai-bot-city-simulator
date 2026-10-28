@@ -11,8 +11,8 @@ import { BUILDING_STYLES, type BuildingStyle } from './sprites'
 
 export interface AssetEntry { key: string; category: 'tile' | 'building' | 'tree' | 'vehicle' | 'prop' | 'character' | 'shadow'; w: number; h: number; transparent: true }
 const TILE_KINDS = ['grass', 'paving', 'asphalt-h', 'asphalt-v', 'crosswalk', 'park'] as const
-const TREE_KINDS = ['oak', 'pine', 'blossom'] as const
-const VEHICLE_KINDS = ['car-red', 'car-blue', 'van'] as const
+const TREE_KINDS = ['oak', 'pine', 'blossom', 'willow'] as const
+const VEHICLE_KINDS = ['car-red', 'car-blue', 'car-yellow', 'van'] as const
 const PROP_KINDS = ['bench', 'lamp', 'sign', 'fountain', 'flowerbed', 'cafe-table', 'bus-shelter'] as const
 const BUILDING_IDS = ['cafe', 'restaurant', 'shop', 'townhall', 'office', 'apartment', 'house', 'bus'] as const
 export const ASSET_MANIFEST: AssetEntry[] = [
@@ -20,6 +20,15 @@ export const ASSET_MANIFEST: AssetEntry[] = [
   ...BUILDING_IDS.map(id => ({ key: `building-${id}`, category: 'building' as const, w: 144, h: id === 'office' ? 208 : id === 'apartment' ? 164 : id === 'house' ? 92 : 128, transparent: true as const })),
   ...TREE_KINDS.map(k => ({ key: `tree-${k}`, category: 'tree' as const, w: 48, h: 64, transparent: true as const })),
   ...VEHICLE_KINDS.map(k => ({ key: `vehicle-${k}`, category: 'vehicle' as const, w: 56, h: 28, transparent: true as const })),
+  // V3 AI-generated buildings, cropped + white-keyed to transparent PNGs
+  // in public/v3-assets/ and loaded by PhaserScene.preload(). The
+  // procedural building-* textures remain as fallback if a file is missing.
+  { key: 'v3-building-cafe', category: 'building' as const, w: 240, h: 223, transparent: true as const },
+  { key: 'v3-building-restaurant', category: 'building' as const, w: 240, h: 201, transparent: true as const },
+  { key: 'v3-building-shop', category: 'building' as const, w: 240, h: 242, transparent: true as const },
+  { key: 'v3-building-townhall', category: 'building' as const, w: 240, h: 240, transparent: true as const },
+  { key: 'v3-building-office', category: 'building' as const, w: 240, h: 354, transparent: true as const },
+  { key: 'v3-building-house', category: 'building' as const, w: 240, h: 268, transparent: true as const },
   ...PROP_KINDS.map(k => ({ key: `prop-${k}`, category: 'prop' as const, w: k === 'bus-shelter' ? 72 : k === 'fountain' ? 64 : 56, h: k === 'bus-shelter' ? 56 : k === 'fountain' ? 40 : 56, transparent: true as const })),
   { key: 'character', category: 'character', w: 40, h: 56, transparent: true },
   { key: 'shadow', category: 'shadow', w: 32, h: 12, transparent: true },
@@ -54,7 +63,10 @@ function tileTexture(scene: Phaser.Scene, kind: typeof TILE_KINDS[number]) {
       if (kind === 'paving') c = rng() < 0.5 ? '#d6c9b0' : '#cfc2a6'
       if (kind === 'asphalt-h' || kind === 'asphalt-v' || kind === 'crosswalk') c = rng() < 0.5 ? '#3f3f46' : '#38383f'
       if (kind === 'park' && rng() < 0.06) c = '#f472b6' // flower speckle
-      if (kind === 'paving' && rng() < 0.03) c = '#b8ab8d' // faint speckle, no grid lines
+      if (kind === 'park' && rng() < 0.05) c = '#16a34a' // grass tuft
+      if (kind === 'paving' && rng() < 0.03) c = '#b8ab8d' // faint speckle
+      if (kind === 'paving' && x % 8 === 0) c = '#b8ab8d' // paving joints
+      if ((kind === 'asphalt-h' || kind === 'asphalt-v') && rng() < 0.04) c = '#27272a' // asphalt wear
       set(x, y, c)
     }
     // Outline + markings, drawn on top of the texture.
@@ -133,6 +145,10 @@ function treeTexture(scene: Phaser.Scene, kind: typeof TREE_KINDS[number]) {
     rect(set, 11, 24, 13, 31, '#78350f')
     if (kind === 'pine') {
       for (let tier = 0; tier < 3; tier++) { const y0 = 4 + tier * 7, w = 10 - tier * 2; for (let y = y0; y < y0 + 7; y++) for (let x = 12 - (y - y0) - 1; x <= 12 + (y - y0); x++) if (x >= 12 - w && x <= 12 + w) set(x, y, rng() < 0.8 ? '#15803d' : '#166534') }
+    } else if (kind === 'willow') {
+      // Drooping canopy: vertical strands of varied length, no round blob.
+      for (let x = 4; x <= 20; x++) { const len = 10 + Math.floor(rng() * 8); for (let y = 6; y < 6 + len; y++) set(x, y, rng() < 0.7 ? '#65a30d' : '#4d7c0f') }
+      for (let x = 6; x <= 18; x += 3) set(x, 5, '#365314')
     } else {
       // Irregular canopy: three overlapping clusters + noise, dark outline
       // where a canopy pixel borders empty space — no perfect circle.
@@ -153,7 +169,7 @@ function treeTexture(scene: Phaser.Scene, kind: typeof TREE_KINDS[number]) {
 }
 function vehicleTexture(scene: Phaser.Scene, kind: typeof VEHICLE_KINDS[number]) {
   const key = `vehicle-${kind}`; if (scene.textures.exists(key)) return
-  const body = kind === 'car-red' ? '#dc2626' : kind === 'car-blue' ? '#2563eb' : '#eab308'
+  const body = kind === 'car-red' ? '#dc2626' : kind === 'car-blue' ? '#2563eb' : kind === 'car-yellow' ? '#facc15' : '#eab308'
   pixelTexture(scene, key, 28, 14, set => {
     rect(set, 1, 5, 26, 11, body); rect(set, 0, 7, 27, 9, body)
     if (kind === 'van') rect(set, 12, 1, 26, 11, body)

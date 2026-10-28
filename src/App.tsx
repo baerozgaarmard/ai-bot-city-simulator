@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Pause, Play, Plus, Users, MapPin, Brain, ListOrdered, Settings as SettingsIcon, Building2, Save, FolderOpen, RotateCcw } from 'lucide-react'
 import CityView from './components/CityView'
+import AgentAvatar from './components/AgentAvatar'
 import { engine } from './simulation/engine'
 import { LOCATIONS } from './simulation/map'
 import { useUI, selectedAgent } from './stores/store'
@@ -57,7 +58,7 @@ export default function App() {
               </div>
             </div>
             <div className="flex-1 overflow-auto p-2 space-y-1">
-              {filtered.map(a => <button key={a.id} onClick={() => ui.select(a.id)} className={`w-full text-left p-2 rounded flex items-center gap-2 ${ui.selectedId === a.id ? 'bg-gray-800 ring-1 ring-emerald-500' : 'hover:bg-gray-900'}`}><span className="w-6 h-6 rounded-full shrink-0" style={{ background: a.color }} /><span className="flex-1 min-w-0"><span className="block truncate font-medium">{a.name}</span><span className="block truncate text-xs text-gray-400">{a.role} · {a.state}</span></span><span className={`w-2 h-2 rounded-full ${a.state === 'Idle' ? 'bg-amber-400' : 'bg-emerald-400'}`} title={a.state} /></button>)}
+              {filtered.map(a => <button key={a.id} onClick={() => ui.select(a.id)} className={`w-full text-left p-2 rounded flex items-center gap-2 ${ui.selectedId === a.id ? 'bg-gray-800 ring-1 ring-emerald-500' : 'hover:bg-gray-900'}`}><AgentAvatar role={a.role} index={agents.indexOf(a)} size={24} /><span className="flex-1 min-w-0"><span className="block truncate font-medium">{a.name}</span><span className="block truncate text-xs text-gray-400">{a.role} · {a.state}</span></span><span className={`w-2 h-2 rounded-full ${a.state === 'Idle' ? 'bg-amber-400' : 'bg-emerald-400'}`} title={a.state} /></button>)}
               {filtered.length === 0 && <p className="text-sm text-gray-400 p-2">No agents match this search/filter.</p>}
             </div>
             <div className="p-3 border-t border-gray-800 text-sm space-y-1">
@@ -110,7 +111,7 @@ export default function App() {
         {!ui.rightCollapsed && sel && (
           <aside className="w-80 border-l border-gray-800 p-3 overflow-auto shrink-0">
             <div className="flex justify-between"><h2 className="font-semibold">Agent Inspector</h2><button className="text-xs underline" onClick={() => ui.set({ rightCollapsed: true })}>Collapse</button></div>
-            <div className="flex items-center gap-2 mt-2"><span className="w-8 h-8 rounded-full" style={{ background: sel.color }} /><div><p className="font-bold">{sel.name}</p><p className="text-sm text-gray-400">{sel.role} · {sel.state}</p></div></div>
+            <div className="flex items-center gap-2 mt-2"><AgentAvatar role={sel.role} index={agents.indexOf(sel)} size={32} /><div><p className="font-bold">{sel.name}</p><p className="text-sm text-gray-400">{sel.role} · {sel.state}</p></div></div>
             <p className="text-sm mt-3">Activity: {sel.activity}</p>
             <p className="text-sm">Position: ({Math.round(sel.pos.x)}, {Math.round(sel.pos.y)}) → Destination: {sel.dest ? `(${sel.dest.x}, ${sel.dest.y})` : '—'}</p>
             <p className="text-sm">Goal: {sel.goal} · Intention: {sel.intention}</p>

@@ -28,14 +28,33 @@ export class PhaserScene extends Phaser.Scene {
   private pathG: Phaser.GameObjects.Graphics | null = null
   constructor() { super('city') }
 
-  private img(key: string, sx: number, sy: number, depth: number, scaleX = 1) {
+  private img(key: string, sx: number, sy: number, depth: number, scaleX = 1, scaleY = 1) {
     const im = this.add.image(sx, sy, key).setOrigin(0.5, 1)
-    im.setDepth(depth); im.setScale(scaleX, 1); im.texture.setFilter(Phaser.Textures.FilterMode.NEAREST)
+    im.setDepth(depth); im.setScale(scaleX, scaleY); im.texture.setFilter(Phaser.Textures.FilterMode.NEAREST)
     return im
+  }
+  // V3 generated building if loaded, else the procedural texture.
+  // Generated art is wide (240px); targetW keeps it at ~2-3 tiles wide so
+  // it does not clip neighbours or dwarf doorways and agents.
+  private buildingImg(id: string, sx: number, sy: number, depth: number, targetW: number, proceduralKey: string) {
+    const v3 = `v3-building-${id}`
+    if (this.textures.exists(v3)) {
+      const w = this.textures.get(v3).source[0].width || 240
+      const s = targetW / w
+      return this.img(v3, sx, sy, depth, s, s)
+    }
+    return this.img(proceduralKey, sx, sy, depth)
   }
   private shadow(sx: number, sy: number, depth: number, w = 1) {
     const im = this.add.image(sx, sy, 'shadow').setOrigin(0.5, 1).setDepth(depth).setScale(w, 1)
     return im
+  }
+  preload() {
+    // V3 AI-generated buildings (public/v3-assets/, copied to dist root).
+    // If a file fails to load, create() falls back to procedural textures.
+    for (const id of ['cafe', 'restaurant', 'shop', 'townhall', 'office', 'house']) {
+      this.load.image(`v3-building-${id}`, `/v3-assets/building-${id}.png`)
+    }
   }
   private makeSpriteTextures(a: any, index: number) {
     const dirs: Dir[] = ['down', 'up', 'left', 'right']; const frames: Frame[] = ['idle', 'walkA', 'walkB']
@@ -44,7 +63,7 @@ export class PhaserScene extends Phaser.Scene {
       const { rows, colors } = spritePixels(a.role, dir, frame, index)
       const g = this.add.graphics()
       rows.forEach((row, r) => { [...row].forEach((ch, c) => { if (ch === '.') return; g.fillStyle(hexNum(colors[ch] ?? '#111827'), 1); g.fillRect(c * 2, r * 2, 2, 2) }) })
-      g.generateTexture(key, 40, 56); g.destroy()
+      g.generateTexture(key, 48, 64); g.destroy() // 24x32 grid at 2px/cell
     }
   }
 
@@ -64,7 +83,8 @@ export class PhaserScene extends Phaser.Scene {
       const { sx, sy } = iso(x, y)
       const isRoad = y === 7 || x === 10
       const isPark = LOCATIONS.find(l => l.id === 'park')!.tiles.some(t => t.x === x && t.y === y)
-      const kind = isRoad && x === 10 && y === 7 ? 'crosswalk' : isRoad && y === 7 ? 'asphalt-h' : isRoad ? 'asphalt-v' : isPark ? 'park' : 'paving'
+      // Paved path through the park centre (x=10 column), not just grass.
+      const kind = isRoad && x === 10 && y === 7 ? 'crosswalk' : isRoad && y === 7 ? 'asphalt-h' : isRoad ? 'asphalt-v' : isPark && x === 10 ? 'paving' : isPark ? 'park' : 'paving'
       const im = this.add.image(sx, sy, `tile-${kind}`).setOrigin(0.5, 0.5).setDepth(sy)
       im.texture.setFilter(Phaser.Textures.FilterMode.NEAREST)
     }
@@ -74,18 +94,30 @@ export class PhaserScene extends Phaser.Scene {
       const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2
       const { sx, sy } = iso(cx, cy)
       if (loc.id === 'residential') {
-        for (const [hx, hy, kind] of [[3.5, 11, 'house'], [5, 12, 'house'], [4, 11.5, 'apartment']] as const) {
-          const p = iso(hx, hy); this.shadow(p.sx, p.sy + 2, p.sy + 0.1, 2.2); this.img(`building-${kind}`, p.sx, p.sy + 8, p.sy + 1)
-        }
+        // Generated house (one flipped for variety) + procedural apartment.
+        const h1 = iso(3.5, 11); this.shadow(h1.sx, h1.sy + 2, h1.sy + 0.1, 2.2); this.buildingImg('house', h1.sx, h1.sy + 8, h1.sy + 1, 135, 'building-house')
+        const h2 = iso(5, 12); this.shadow(h2.sx, h2.sy + 2, h2.sy + 0.1, 2.2)
+        if (this.textures.exists('v3-building-house')) { const s = 135 / (this.textures.get('v3-building-house').source[0].width || 240); this.img('v3-building-house', h2.sx, h2.sy + 8, h2.sy + 1, -s, s) }
+        else this.img('building-house', h2.sx, h2.sy + 8, h2.sy + 1)
+        const h3 = iso(4, 11.5); this.shadow(h3.sx, h3.sy + 2, h3.sy + 0.1, 2.2); this.img('building-apartment', h3.sx, h3.sy + 8, h3.sy + 1)
       } else if (loc.id === 'park') {
         const f = iso(9.5, 8.5); this.img('prop-fountain', f.sx, f.sy + 4, f.sy + 0.5)
         for (const [tx, ty, kind] of [[8, 8, 'oak'], [11, 8, 'pine'], [8, 9, 'blossom'], [11, 9, 'oak']] as const) { const p = iso(tx, ty); this.shadow(p.sx, p.sy + 2, p.sy + 0.1); this.img(`tree-${kind}`, p.sx, p.sy, p.sy + 0.5) }
         for (const [bx, by] of [[9, 8], [10, 9]] as const) { const p = iso(bx, by); this.img('prop-bench', p.sx, p.sy + 6, p.sy + 0.5) }
         for (const [fx, fy] of [[9, 9], [10, 8]] as const) { const p = iso(fx, fy); this.img('prop-flowerbed', p.sx, p.sy + 4, p.sy + 0.5) }
+        // Gathering spaces flanking the fountain, off-grid decoration only.
+        for (const [fx, fy] of [[8.5, 8.5], [10.5, 8.5]] as const) { const p = iso(fx, fy); this.img('prop-flowerbed', p.sx, p.sy + 4, p.sy + 0.5) }
+        const w = iso(8.5, 9.5); this.shadow(w.sx, w.sy + 2, w.sy + 0.1); this.img('tree-willow', w.sx, w.sy, w.sy + 0.5)
       } else if (loc.id === 'bus') {
-        this.shadow(sx, sy + 2, sy + 0.1, 1.8); this.img('prop-bus-shelter', sx, sy + 6, sy + 1); this.img('prop-sign', sx + 28, sy, sy + 0.5)
+        // Shelter at prop depth, not building depth: waiting agents stand
+        // at the stop and must not be hidden behind its glass panel.
+        this.shadow(sx, sy + 2, sy + 0.1, 1.8); this.img('prop-bus-shelter', sx, sy + 6, sy + 0.5); this.img('prop-sign', sx + 28, sy, sy + 0.5)
       } else {
-        this.shadow(sx, sy + 2, sy + 0.1, 2.6); this.img(`building-${loc.id}`, sx, sy + 10, sy + 1)
+        // Generated art is 240px wide; keep it narrower than the old 144px
+        // procedural buildings would suggest, because adjacent footprints
+        // are only ~2 tiles (~128px iso) apart and wider art overlaps neighbours.
+        const targetW = loc.id === 'office' ? 120 : loc.id === 'townhall' ? 160 : loc.id === 'shop' ? 145 : 150
+        this.shadow(sx, sy + 2, sy + 0.1, 2.6); this.buildingImg(loc.id, sx, sy + 8, sy + 1, targetW, `building-${loc.id}`)
         if (loc.id === 'townhall') this.img('prop-sign', sx + 40, sy, sy + 0.5)
         if (loc.id === 'cafe' || loc.id === 'restaurant') { const e = iso(loc.entrance.x, loc.entrance.y); this.img('prop-cafe-table', e.sx + 24, e.sy, e.sy + 0.5); this.img('prop-cafe-table', e.sx - 22, e.sy + 12, e.sy + 0.5) }
         if (loc.id === 'shop') this.img('prop-sign', sx + 36, sy, sy + 0.5)
@@ -98,8 +130,8 @@ export class PhaserScene extends Phaser.Scene {
     for (const [ax, ay] of [[1, 1], [20, 14]] as const) { const p = iso(ax, ay); this.shadow(p.sx, p.sy + 2, p.sy + 0.1, 2.4); this.img('building-apartment', p.sx, p.sy + 8, p.sy + 1) }
     // Street furniture, trees, and parked vehicles with directional orientation.
     for (const [lx, ly] of [[0, 7], [21, 7], [10, 0], [10, 15], [5, 7], [15, 7]] as const) { const p = iso(lx, ly); this.img('prop-lamp', p.sx, p.sy, p.sy + 0.5) }
-    for (const [cx2, cy2, kind, flip] of [[2, 7, 'car-red', 1], [18, 7, 'car-blue', -1], [10, 3, 'van', 1]] as const) { const p = iso(cx2, cy2); this.shadow(p.sx, p.sy + 4, p.sy + 0.1, 1.6); this.img(`vehicle-${kind}`, p.sx, p.sy + 6, p.sy + 0.5, flip) }
-    for (const [tx, ty, kind] of [[1, 6, 'pine'], [20, 8, 'oak'], [12, 12, 'blossom']] as const) { const p = iso(tx, ty); this.shadow(p.sx, p.sy + 2, p.sy + 0.1); this.img(`tree-${kind}`, p.sx, p.sy, p.sy + 0.5) }
+    for (const [cx2, cy2, kind, flip] of [[2, 7, 'car-red', 1], [18, 7, 'car-blue', -1], [10, 3, 'van', 1], [10, 12, 'car-yellow', -1]] as const) { const p = iso(cx2, cy2); this.shadow(p.sx, p.sy + 4, p.sy + 0.1, 1.6); this.img(`vehicle-${kind}`, p.sx, p.sy + 6, p.sy + 0.5, flip) }
+    for (const [tx, ty, kind] of [[1, 6, 'pine'], [20, 8, 'oak'], [12, 12, 'blossom'], [19, 12, 'willow']] as const) { const p = iso(tx, ty); this.shadow(p.sx, p.sy + 2, p.sy + 0.1); this.img(`tree-${kind}`, p.sx, p.sy, p.sy + 0.5) }
     for (const a of engine.agents) this.ensureAgent(a.id)
     this.pathG = this.add.graphics()
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => { if (p.button === 0) this.input.setDefaultCursor('grabbing') })
@@ -115,7 +147,7 @@ export class PhaserScene extends Phaser.Scene {
     this.makeSpriteTextures(a, index)
     const shadow = this.shadow(0, 0, 0, 0.8)
     const ring = this.add.image(0, 0, 'shadow').setOrigin(0.5, 1).setDepth(0).setScale(1.4, 1.4); ring.setTint(0xfacc15); ring.setAlpha(0.6); ring.setVisible(false)
-    const sprite = this.add.sprite(0, 0, `agent-${a.id}-down-idle`).setOrigin(0.5, 1).setScale(1.3)
+    const sprite = this.add.sprite(0, 0, `agent-${a.id}-down-idle`).setOrigin(0.5, 1).setScale(1.15)
     sprite.texture.setFilter(Phaser.Textures.FilterMode.NEAREST)
     sprite.setInteractive(); sprite.on('pointerdown', () => useUI.getState().select(a.id))
     const label = this.add.text(0, -28, a.name, { fontSize: '10px', color: '#fff', backgroundColor: '#111827' }).setOrigin(0.5)
@@ -147,7 +179,7 @@ export class PhaserScene extends Phaser.Scene {
       o.sprite.setPosition(sx, sy + bounce); o.sprite.setDepth(sy + 2)
       o.shadow.setPosition(sx, sy); o.shadow.setDepth(sy + 0.1)
       o.ring.setPosition(sx, sy); o.ring.setDepth(sy + 0.15); o.ring.setVisible(ui.selectedId === a.id)
-      o.label.setPosition(sx, sy - 78); o.label.setDepth(sy + 3)
+      o.label.setPosition(sx, sy - 86); o.label.setDepth(sy + 3)
       o.label.setText(ui.showThoughts ? `${a.name}\n${a.state}` : a.name)
       if (ui.showPaths && ui.selectedId === a.id && a.path.length && this.pathG) {
         this.pathG.clear(); this.pathG.lineStyle(2, 0xfacc15, 0.9); this.pathG.setDepth(sy + 0.4); this.pathG.beginPath(); this.pathG.moveTo(sx, sy)

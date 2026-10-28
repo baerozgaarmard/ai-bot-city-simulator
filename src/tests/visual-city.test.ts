@@ -31,7 +31,7 @@ describe('visual city verification', () => {
       const a = e.agents[i]
       for (const dir of dirs) for (const frame of frames) {
         const s = spritePixels(a.role, dir, frame, i)
-        expect(s.rows.length).toBe(28); expect(s.rows[0].length).toBe(20)
+        expect(s.rows.length).toBe(32); expect(s.rows[0].length).toBe(24)
         expect(countPixels(s.rows, 'S')).toBeGreaterThan(0) // head/skin
         expect(countPixels(s.rows, 'T')).toBeGreaterThan(0) // clothing
         expect(countPixels(s.rows, 'H')).toBeGreaterThan(0) // hair

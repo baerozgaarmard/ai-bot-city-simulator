@@ -1,11 +1,13 @@
 // Pure, testable pixel-art specs. No Phaser import here, so Vitest can
 // verify every role sprite and every building style without a canvas.
-// A character is a 20x28 pixel grid; each cell is a palette key:
-// '.' transparent, 'H' hair, 'S' skin, 'E' eye, 'T' top, 'P' pants,
-// 'F' shoes, 'A' accessory (hat / cap / apron / coat stripe / backpack).
+// A character is a 24x32 pixel grid; each cell is a palette key:
+// '.' transparent, 'H' hair, 'S' skin, 'E' eye, 'O' mouth, 'T' top,
+// 'P' pants, 'F' shoes, 'A' accessory (hat / cap / apron / coat stripe).
 // 8 base silhouettes come from hair style x accessory combinations:
 // short, bob, bun, bald, long, cap, hat, apron — role colour, skin tone
-// and accessory then vary them to 24+ distinct agents.
+// and accessory then vary them to 24+ distinct agents. The same grid
+// renders in Phaser (city sprites) and in React (registry/inspector
+// thumbnails via AgentAvatar), so an agent's identity is stable everywhere.
 export type Dir = 'down' | 'up' | 'left' | 'right'
 export type Frame = 'idle' | 'walkA' | 'walkB'
 export interface RolePalette { top: string; pants: string; accessory: string; accessoryKind: 'hat' | 'cap' | 'apron' | 'coat' | 'none' }
@@ -43,43 +45,46 @@ export function paletteFor(role: string): RolePalette {
   return ROLE_PALETTES[keys[h]]
 }
 export function paletteColors(p: RolePalette, skin: string, hair: string): Record<string, string> {
-  return { H: hair, S: skin, E: '#111827', T: p.top, P: p.pants, F: '#1f2937', A: p.accessory }
+  return { H: hair, S: skin, E: '#111827', O: '#7c2d12', T: p.top, P: p.pants, F: '#1f2937', A: p.accessory }
 }
-// 20 wide x 28 tall. Rows 0-5 hair, 6-11 head, 12-19 body+arms, 20-27 legs.
+// 24 wide x 32 tall, chibi proportions so the face reads at city zoom.
+// Rows 0-4 hair, 5-12 head/face, 13-21 torso+arms, 22-31 legs+shoes.
 export function charPixels(dir: Dir, frame: Frame, hairStyle: string = 'short'): string[] {
-  const g: string[][] = Array.from({ length: 28 }, () => Array(20).fill('.'))
+  const g: string[][] = Array.from({ length: 32 }, () => Array(24).fill('.'))
   const fill = (r0: number, r1: number, c0: number, c1: number, ch: string) => { for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) g[r][c] = ch }
   // Hair styles (back of head in 'up' view is all hair).
-  if (hairStyle === 'bald') fill(0, 1, 6, 13, 'H')
-  else if (hairStyle === 'bob') { fill(0, 4, 5, 14, 'H'); fill(5, 11, 5, 5, 'H'); fill(5, 11, 14, 14, 'H') }
-  else if (hairStyle === 'bun') { fill(0, 4, 6, 13, 'H'); fill(0, 2, 9, 11, 'H') }
-  else if (hairStyle === 'long') { fill(0, 4, 5, 14, 'H'); fill(5, 14, 5, 6, 'H'); fill(5, 14, 13, 14, 'H') }
-  else fill(0, 3, 6, 13, 'H')
-  fill(5, 11, 6, 13, 'S')
-  if (dir === 'up') fill(5, 11, 6, 13, 'H')
+  if (hairStyle === 'bald') fill(0, 1, 8, 15, 'H')
+  else if (hairStyle === 'bob') { fill(0, 4, 7, 16, 'H'); fill(5, 11, 6, 6, 'H'); fill(5, 11, 17, 17, 'H') }
+  else if (hairStyle === 'bun') { fill(0, 4, 8, 15, 'H'); fill(0, 2, 11, 13, 'H') }
+  else if (hairStyle === 'long') { fill(0, 4, 7, 16, 'H'); fill(5, 14, 6, 7, 'H'); fill(5, 14, 16, 17, 'H') }
+  else { fill(0, 3, 8, 15, 'H'); fill(4, 4, 8, 10, 'H'); fill(4, 4, 13, 15, 'H') } // short, with fringe
+  fill(5, 12, 8, 15, 'S')
+  if (dir === 'up') fill(5, 12, 8, 15, 'H')
   else {
-    const eyeC = dir === 'left' ? [7, 10] : dir === 'right' ? [9, 12] : [7, 11]
-    g[8][eyeC[0]] = 'E'; g[8][eyeC[1]] = 'E'
-    if (dir === 'down') { g[9][9] = 'E'; g[9][10] = 'E' }
+    // Face: two eyes + a smile when facing down, shifted eyes in profile.
+    if (dir === 'down') { g[9][9] = 'E'; g[9][13] = 'E'; g[11][10] = 'O'; g[11][11] = 'O'; g[11][12] = 'O' }
+    else if (dir === 'left') { g[9][9] = 'E'; g[10][8] = 'S' }
+    else if (dir === 'right') { g[9][13] = 'E'; g[10][15] = 'S' }
+    else { g[9][9] = 'E'; g[9][13] = 'E' }
   }
   // Torso + arms. Arms swing in walk frames, hang in idle.
-  fill(12, 19, 6, 13, 'T')
+  fill(13, 21, 8, 15, 'T')
   const armSwing = frame === 'walkA' ? 1 : frame === 'walkB' ? -1 : 0
-  fill(13 + Math.max(0, armSwing), 18 + Math.max(0, armSwing), 4, 5, 'T')
-  fill(13 + Math.max(0, -armSwing), 18 + Math.max(0, -armSwing), 14, 15, 'T')
-  fill(18, 18, 4, 5, 'S'); fill(18, 18, 14, 15, 'S')
-  // Legs: idle together, walk frames stride.
-  if (frame === 'idle') { fill(20, 26, 7, 9, 'P'); fill(20, 26, 10, 12, 'P'); fill(27, 27, 7, 9, 'F'); fill(27, 27, 10, 12, 'F') }
-  else if (frame === 'walkA') { fill(20, 27, 7, 8, 'P'); fill(27, 27, 7, 8, 'F'); fill(20, 24, 11, 12, 'P'); fill(25, 25, 11, 12, 'F') }
-  else { fill(20, 24, 7, 8, 'P'); fill(25, 25, 7, 8, 'F'); fill(20, 27, 11, 12, 'P'); fill(27, 27, 11, 12, 'F') }
+  fill(14 + Math.max(0, armSwing), 20 + Math.max(0, armSwing), 6, 7, 'T')
+  fill(14 + Math.max(0, -armSwing), 20 + Math.max(0, -armSwing), 16, 17, 'T')
+  fill(20, 20, 6, 7, 'S'); fill(20, 20, 16, 17, 'S')
+  // Legs: idle together, walk frames stride with a lifted foot.
+  if (frame === 'idle') { fill(22, 29, 9, 11, 'P'); fill(22, 29, 12, 14, 'P'); fill(30, 31, 9, 11, 'F'); fill(30, 31, 12, 14, 'F') }
+  else if (frame === 'walkA') { fill(22, 30, 9, 10, 'P'); fill(31, 31, 9, 10, 'F'); fill(22, 27, 13, 14, 'P'); fill(28, 28, 13, 14, 'F') }
+  else { fill(22, 27, 9, 10, 'P'); fill(28, 28, 9, 10, 'F'); fill(22, 30, 13, 14, 'P'); fill(31, 31, 13, 14, 'F') }
   return g.map(r => r.join(''))
 }
 export function applyAccessory(rows: string[], kind: RolePalette['accessoryKind']): string[] {
   const g = rows.map(r => r.split(''))
-  if (kind === 'hat') for (let c = 4; c <= 15; c++) { g[0][c] = 'A'; g[1][c] = 'A' }
-  if (kind === 'cap') { for (let c = 6; c <= 13; c++) g[0][c] = 'A'; g[1][16] = 'A'; g[1][17] = 'A' }
-  if (kind === 'apron') for (let r = 13; r <= 19; r++) { g[r][8] = 'A'; g[r][9] = 'A'; g[r][10] = 'A'; g[r][11] = 'A' }
-  if (kind === 'coat') for (let r = 12; r <= 19; r++) { g[r][6] = 'A'; g[r][13] = 'A' }
+  if (kind === 'hat') for (let c = 6; c <= 17; c++) { g[0][c] = 'A'; g[1][c] = 'A' }
+  if (kind === 'cap') { for (let c = 8; c <= 15; c++) g[0][c] = 'A'; g[1][18] = 'A'; g[1][19] = 'A' }
+  if (kind === 'apron') for (let r = 14; r <= 21; r++) { g[r][10] = 'A'; g[r][11] = 'A'; g[r][12] = 'A'; g[r][13] = 'A' }
+  if (kind === 'coat') for (let r = 13; r <= 21; r++) { g[r][8] = 'A'; g[r][15] = 'A' }
   return g.map(r => r.join(''))
 }
 export function spritePixels(role: string, dir: Dir, frame: Frame, agentIndex: number): { rows: string[]; colors: Record<string, string> } {
