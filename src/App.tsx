@@ -83,6 +83,7 @@ export default function App() {
               {ui.view === 'Settings' && <div className="space-y-3"><h2 className="text-xl font-bold">Settings</h2>
                 <label className="flex gap-2"><input type="checkbox" checked={ui.showThoughts} onChange={e => ui.set({ showThoughts: e.target.checked })} /> Thought labels</label>
                 <label className="flex gap-2"><input type="checkbox" checked={ui.showPaths} onChange={e => ui.set({ showPaths: e.target.checked })} /> Path visualization</label>
+                <label className="flex gap-2"><input type="checkbox" checked={ui.showLocationLabels} onChange={e => ui.set({ showLocationLabels: e.target.checked })} /> Location labels (off by default; buildings render without them)</label>
                 <label className="flex gap-2">Event-log density <select className="bg-gray-900 border border-gray-700 rounded" value={ui.logDensity} onChange={e => ui.set({ logDensity: e.target.value as any })}><option value="low">low</option><option value="normal">normal</option><option value="high">high</option></select></label>
                 <p className="text-sm text-gray-400">Simulation runs locally in your browser. No backend, no account, no external AI. Optional browser-local LLM is not enabled — the rules-based engine is the default and only decision loop in this build.</p>
                 <button className="px-3 py-1 bg-gray-800 rounded" onClick={resetCamera}>Reset Camera</button>
