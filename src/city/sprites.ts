@@ -2,14 +2,21 @@
 // verify every role sprite and every building style without a canvas.
 // A character is a 24x32 pixel grid; each cell is a palette key:
 // '.' transparent, 'H' hair, 'S' skin, 'E' eye, 'O' mouth, 'T' top,
-// 'P' pants, 'F' shoes, 'A' accessory (hat / cap / apron / coat stripe).
-// 8 base silhouettes come from hair style x accessory combinations:
-// short, bob, bun, bald, long, cap, hat, apron — role colour, skin tone
-// and accessory then vary them to 24+ distinct agents. The same grid
-// renders in Phaser (city sprites) and in React (registry/inspector
-// thumbnails via AgentAvatar), so an agent's identity is stable everywhere.
+// 'D' darker top (shading, right side), 'L' lighter top (highlight, left),
+// 'C' collar, 'B' belt, 'K' dark outline, 'P' pants/skirt, 'F' shoes,
+// 'A' accessory (hat / cap / apron / coat stripe).
+// 7 hair styles x accessory combinations give the base silhouettes;
+// role colour, skin tone and accessory then vary them to 24+ agents.
+// The same grid renders in Phaser (city sprites) and in React (registry/
+// inspector thumbnails via AgentAvatar), so identity is stable everywhere.
+// V5: collars, belts, torso shading/highlight, ears, eyebrows, noses in
+// profile, skirt variant, ponytail + curly hair, and an idleB blink frame
+// (eyes closed, arms raised 1px) for a subtle idle animation. Directions
+// are genuine: down = front face, up = back of head (no face), left/right
+// = profiles with a nose on the facing side and hair on the back side.
+// Left/right bodies are NOT a flip of the front view.
 export type Dir = 'down' | 'up' | 'left' | 'right'
-export type Frame = 'idle' | 'walkA' | 'walkB'
+export type Frame = 'idle' | 'idleB' | 'walkA' | 'walkB'
 export interface RolePalette { top: string; pants: string; accessory: string; accessoryKind: 'hat' | 'cap' | 'apron' | 'coat' | 'none' }
 export const ROLE_PALETTES: Record<string, RolePalette> = {
   'Software Developer': { top: '#3b82f6', pants: '#1e293b', accessory: '#3b82f6', accessoryKind: 'none' },
@@ -38,18 +45,23 @@ export const ROLE_PALETTES: Record<string, RolePalette> = {
 }
 export const SKIN_TONES = ['#ffdbac', '#f0c8a0', '#c68642', '#8d5524']
 export const HAIR_COLORS = ['#111827', '#78350f', '#d97706', '#b91c1c', '#9ca3af']
-export const HAIR_STYLES = ['short', 'bob', 'bun', 'bald', 'long'] as const
+export const HAIR_STYLES = ['short', 'bob', 'bun', 'bald', 'long', 'ponytail', 'curly'] as const
 export function paletteFor(role: string): RolePalette {
   if (ROLE_PALETTES[role]) return ROLE_PALETTES[role]
   const keys = Object.keys(ROLE_PALETTES); let h = 0; for (const c of role) h = (h * 31 + c.charCodeAt(0)) % keys.length
   return ROLE_PALETTES[keys[h]]
 }
+const shadeHex = (hex: string, f: number) => {
+  const n = parseInt(hex.replace('#', ''), 16)
+  const ch = (v: number) => Math.max(0, Math.min(255, Math.round(v * f)))
+  return `#${((ch((n >> 16) & 255) << 16) + (ch((n >> 8) & 255) << 8) + ch(n & 255)).toString(16).padStart(6, '0')}`
+}
 export function paletteColors(p: RolePalette, skin: string, hair: string): Record<string, string> {
-  return { H: hair, S: skin, E: '#111827', O: '#7c2d12', T: p.top, P: p.pants, F: '#1f2937', A: p.accessory }
+  return { H: hair, S: skin, E: '#111827', O: '#7c2d12', T: p.top, D: shadeHex(p.top, 0.72), L: shadeHex(p.top, 1.22), C: '#f8fafc', B: '#292524', K: '#1f2937', P: p.pants, F: '#1f2937', A: p.accessory }
 }
 // 24 wide x 32 tall, chibi proportions so the face reads at city zoom.
 // Rows 0-4 hair, 5-12 head/face, 13-21 torso+arms, 22-31 legs+shoes.
-export function charPixels(dir: Dir, frame: Frame, hairStyle: string = 'short'): string[] {
+export function charPixels(dir: Dir, frame: Frame, hairStyle: string = 'short', skirt = false): string[] {
   const g: string[][] = Array.from({ length: 32 }, () => Array(24).fill('.'))
   const fill = (r0: number, r1: number, c0: number, c1: number, ch: string) => { for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) g[r][c] = ch }
   // Hair styles (back of head in 'up' view is all hair).
@@ -57,26 +69,52 @@ export function charPixels(dir: Dir, frame: Frame, hairStyle: string = 'short'):
   else if (hairStyle === 'bob') { fill(0, 4, 7, 16, 'H'); fill(5, 11, 6, 6, 'H'); fill(5, 11, 17, 17, 'H') }
   else if (hairStyle === 'bun') { fill(0, 4, 8, 15, 'H'); fill(0, 2, 11, 13, 'H') }
   else if (hairStyle === 'long') { fill(0, 4, 7, 16, 'H'); fill(5, 14, 6, 7, 'H'); fill(5, 14, 16, 17, 'H') }
+  else if (hairStyle === 'ponytail') { fill(0, 4, 8, 15, 'H'); fill(5, 14, 16, 17, 'H') }
+  else if (hairStyle === 'curly') { fill(0, 3, 6, 17, 'H'); fill(4, 4, 6, 6, 'H'); fill(4, 4, 17, 17, 'H') }
   else { fill(0, 3, 8, 15, 'H'); fill(4, 4, 8, 10, 'H'); fill(4, 4, 13, 15, 'H') } // short, with fringe
   fill(5, 12, 8, 15, 'S')
-  if (dir === 'up') fill(5, 12, 8, 15, 'H')
-  else {
-    // Face: two eyes + a smile when facing down, shifted eyes in profile.
-    if (dir === 'down') { g[9][9] = 'E'; g[9][13] = 'E'; g[11][10] = 'O'; g[11][11] = 'O'; g[11][12] = 'O' }
-    else if (dir === 'left') { g[9][9] = 'E'; g[10][8] = 'S' }
-    else if (dir === 'right') { g[9][13] = 'E'; g[10][15] = 'S' }
-    else { g[9][9] = 'E'; g[9][13] = 'E' }
+  // Ears (front + profile views only).
+  if (dir !== 'up') { g[9][7] = 'S'; g[9][16] = 'S' }
+  if (dir === 'up') {
+    fill(5, 12, 8, 15, 'H')
+    if (hairStyle === 'ponytail') fill(5, 14, 16, 17, 'H')
+    if (hairStyle === 'long') { fill(5, 14, 6, 7, 'H'); fill(5, 14, 16, 17, 'H') }
+  } else if (dir === 'down') {
+    // Front face: eyebrows, two eyes, smile.
+    g[8][9] = 'K'; g[8][13] = 'K'; g[9][9] = 'E'; g[9][13] = 'E'; g[11][10] = 'O'; g[11][11] = 'O'; g[11][12] = 'O'
+  } else if (dir === 'left') {
+    // Profile facing left: single eye, nose on the facing (left) side,
+    // hair covering the back (right) side of the head.
+    g[9][9] = 'E'; g[10][7] = 'S'; fill(5, 12, 14, 15, 'H')
+  } else {
+    // Profile facing right: mirrored nose/hair, not a flip of the front.
+    g[9][13] = 'E'; g[10][16] = 'S'; fill(5, 12, 8, 9, 'H')
   }
-  // Torso + arms. Arms swing in walk frames, hang in idle.
+  // Torso: collar, shaded right side, highlighted left edge, belt.
   fill(13, 21, 8, 15, 'T')
-  const armSwing = frame === 'walkA' ? 1 : frame === 'walkB' ? -1 : 0
-  fill(14 + Math.max(0, armSwing), 20 + Math.max(0, armSwing), 6, 7, 'T')
-  fill(14 + Math.max(0, -armSwing), 20 + Math.max(0, -armSwing), 16, 17, 'T')
-  fill(20, 20, 6, 7, 'S'); fill(20, 20, 16, 17, 'S')
+  fill(14, 21, 15, 15, 'D'); fill(14, 21, 8, 8, 'L')
+  g[13][10] = 'C'; g[13][11] = 'C'; g[13][12] = 'C'; g[13][13] = 'C'; g[14][11] = 'C'; g[14][12] = 'C'
+  fill(21, 21, 8, 15, 'B')
+  // Arms: swing further in walk frames, hands (skin) at the arm ends.
+  const armSwing = frame === 'walkA' ? 2 : frame === 'walkB' ? -2 : frame === 'idleB' ? -1 : 0
+  const armL0 = 14 + Math.max(0, armSwing), armL1 = 20 + Math.max(0, armSwing)
+  const armR0 = 14 + Math.max(0, -armSwing), armR1 = 20 + Math.max(0, -armSwing)
+  fill(armL0, armL1, 6, 7, 'T'); g[armL1][6] = 'S'; g[armL1][7] = 'S'
+  fill(armR0, armR1, 16, 17, 'T'); g[armR1][16] = 'S'; g[armR1][17] = 'S'
   // Legs: idle together, walk frames stride with a lifted foot.
-  if (frame === 'idle') { fill(22, 29, 9, 11, 'P'); fill(22, 29, 12, 14, 'P'); fill(30, 31, 9, 11, 'F'); fill(30, 31, 12, 14, 'F') }
+  // Skirt variant (every 4th agent): skirt block, then skin legs below.
+  if (skirt) {
+    fill(22, 22, 9, 14, 'P'); fill(23, 25, 8, 15, 'P')
+    if (frame === 'idle' || frame === 'idleB') { fill(26, 29, 10, 11, 'S'); fill(26, 29, 12, 13, 'S'); fill(30, 31, 10, 11, 'F'); fill(30, 31, 12, 13, 'F') }
+    else if (frame === 'walkA') { fill(26, 30, 10, 11, 'S'); fill(31, 31, 10, 11, 'F'); fill(26, 28, 12, 13, 'S'); fill(29, 29, 12, 13, 'F') }
+    else { fill(26, 28, 10, 11, 'S'); fill(29, 29, 10, 11, 'F'); fill(26, 30, 12, 13, 'S'); fill(31, 31, 12, 13, 'F') }
+  } else if (frame === 'idle' || frame === 'idleB') { fill(22, 29, 9, 11, 'P'); fill(22, 29, 12, 14, 'P'); fill(30, 31, 9, 11, 'F'); fill(30, 31, 12, 14, 'F') }
   else if (frame === 'walkA') { fill(22, 30, 9, 10, 'P'); fill(31, 31, 9, 10, 'F'); fill(22, 27, 13, 14, 'P'); fill(28, 28, 13, 14, 'F') }
   else { fill(22, 27, 9, 10, 'P'); fill(28, 28, 9, 10, 'F'); fill(22, 30, 13, 14, 'P'); fill(31, 31, 13, 14, 'F') }
+  // idleB = blink: eyes closed (skin) on face views; arms already raised 1px above.
+  if (frame === 'idleB' && dir === 'down') { g[9][9] = 'S'; g[9][13] = 'S' }
+  if (frame === 'idleB' && dir === 'left') g[9][9] = 'S'
+  if (frame === 'idleB' && dir === 'right') g[9][13] = 'S'
   return g.map(r => r.join(''))
 }
 export function applyAccessory(rows: string[], kind: RolePalette['accessoryKind']): string[] {
@@ -89,7 +127,8 @@ export function applyAccessory(rows: string[], kind: RolePalette['accessoryKind'
 }
 export function spritePixels(role: string, dir: Dir, frame: Frame, agentIndex: number): { rows: string[]; colors: Record<string, string> } {
   const p = paletteFor(role)
-  const rows = applyAccessory(charPixels(dir, frame, HAIR_STYLES[agentIndex % HAIR_STYLES.length]), p.accessoryKind)
+  const skirt = agentIndex % 4 === 3
+  const rows = applyAccessory(charPixels(dir, frame, HAIR_STYLES[agentIndex % HAIR_STYLES.length], skirt), p.accessoryKind)
   return { rows, colors: paletteColors(p, SKIN_TONES[agentIndex % SKIN_TONES.length], HAIR_COLORS[agentIndex % HAIR_COLORS.length]) }
 }
 export function countPixels(rows: string[], ch: string): number { return rows.join('').split(ch).length - 1 }

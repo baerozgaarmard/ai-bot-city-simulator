@@ -161,7 +161,7 @@ describe('V4 Windows GPU pipeline (launcher + integrate)', () => {
   it('asset manifest defines integrated status and all 12 assets are still pending (no fake generation)', async () => {
     const fs = await import('node:fs'); const path = await import('node:path')
     const m = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'tools', 'asset-generation', 'asset-manifest.json'), 'utf8'))
-    expect(m.assets.length).toBe(12)
+    expect(m.assets.filter((a: any) => a.id.startsWith('v4-')).length).toBe(12) // V4 set unchanged; V5 adds 7 more below
     expect(m.status_definitions.integrated).toContain('integrate.py')
     for (const a of m.assets) expect(a.status).toBe('pending')
     const walk = (d: string): string[] => fs.existsSync(d) ? fs.readdirSync(d, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]) : []

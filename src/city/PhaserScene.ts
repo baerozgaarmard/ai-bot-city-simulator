@@ -57,7 +57,7 @@ export class PhaserScene extends Phaser.Scene {
     }
   }
   private makeSpriteTextures(a: any, index: number) {
-    const dirs: Dir[] = ['down', 'up', 'left', 'right']; const frames: Frame[] = ['idle', 'walkA', 'walkB']
+    const dirs: Dir[] = ['down', 'up', 'left', 'right']; const frames: Frame[] = ['idle', 'idleB', 'walkA', 'walkB']
     for (const dir of dirs) for (const frame of frames) {
       const key = `agent-${a.id}-${dir}-${frame}`; if (this.textures.exists(key)) continue
       const { rows, colors } = spritePixels(a.role, dir, frame, index)
@@ -87,7 +87,13 @@ export class PhaserScene extends Phaser.Scene {
       const isPark = LOCATIONS.find(l => l.id === 'park')!.tiles.some(t => t.x === x && t.y === y)
       // Paved path through the park centre (x=10 column), not just grass.
       const kind = roadAt(x, y) ? (CROSSWALKS.has(`${x},${y}`) ? 'crosswalk' : roadKind(x, y)) : isPark && x === 10 ? 'paving' : isPark ? 'park' : sidewalkAt(x, y) ? 'sidewalk' : 'paving'
-      const im = this.add.image(sx, sy, `tile-${kind}`).setOrigin(0.5, 0.5).setDepth(sy)
+      // V5 tile variants: deterministic per-tile variant so grass/paving/
+      // park/sidewalk are not one repeated texture across the whole map.
+      // Roads keep a single texture so centrelines stay continuous.
+      const variantKinds = ['grass', 'paving', 'park', 'sidewalk']
+      const v = (x * 7 + y * 13) % 4
+      const tileKey = variantKinds.includes(kind) && v !== 0 ? `tile-${kind}-v${v}` : `tile-${kind}`
+      const im = this.add.image(sx, sy, tileKey).setOrigin(0.5, 0.5).setDepth(sy)
       im.texture.setFilter(Phaser.Textures.FilterMode.NEAREST)
     }
     // Subtle manhole covers on road tiles only, at ground depth (+0.05),
@@ -111,7 +117,7 @@ export class PhaserScene extends Phaser.Scene {
         const h3 = iso(4, 11.5); this.shadow(h3.sx, h3.sy + 2, h3.sy + 0.1, 2.2); this.img('building-apartment', h3.sx, h3.sy + 8, h3.sy + 1)
       } else if (loc.id === 'park') {
         const f = iso(9.5, 8.5); this.img('prop-fountain', f.sx, f.sy + 4, f.sy + 0.5)
-        for (const [tx, ty, kind] of [[8, 8, 'oak'], [11, 8, 'pine'], [8, 9, 'blossom'], [11, 9, 'oak']] as const) { const p = iso(tx, ty); this.shadow(p.sx, p.sy + 2, p.sy + 0.1); this.img(`tree-${kind}`, p.sx, p.sy, p.sy + 0.5) }
+        for (const [tx, ty, kind] of [[8, 8, 'oak'], [11, 8, 'pine'], [8, 9, 'blossom'], [11, 9, 'maple']] as const) { const p = iso(tx, ty); this.shadow(p.sx, p.sy + 2, p.sy + 0.1); this.img(`tree-${kind}`, p.sx, p.sy, p.sy + 0.5) }
         for (const [bx, by] of [[9, 8], [10, 9]] as const) { const p = iso(bx, by); this.img('prop-bench', p.sx, p.sy + 6, p.sy + 0.5) }
         for (const [fx, fy] of [[9, 9], [10, 8]] as const) { const p = iso(fx, fy); this.img('prop-flowerbed', p.sx, p.sy + 4, p.sy + 0.5) }
         // Gathering spaces flanking the fountain, off-grid decoration only.
@@ -143,7 +149,11 @@ export class PhaserScene extends Phaser.Scene {
     // visual lane and letting agents appear to walk through parked cars).
     for (const [lx, ly] of [[0, 6], [21, 8], [9, 0], [11, 15], [5, 6], [15, 6]] as const) { const p = iso(lx, ly); this.img('prop-lamp', p.sx, p.sy, p.sy + 0.5) }
     for (const [cx2, cy2, kind, flip] of [[2, 6, 'car-red', 1], [18, 6, 'car-blue', -1], [11, 3, 'van', 1], [11, 12, 'car-yellow', -1]] as const) { const p = iso(cx2, cy2); this.shadow(p.sx, p.sy + 4, p.sy + 0.1, 1.6); this.img(`vehicle-${kind}`, p.sx, p.sy + 6, p.sy + 0.5, flip) }
-    for (const [tx, ty, kind] of [[1, 6, 'pine'], [20, 8, 'oak'], [12, 12, 'blossom'], [19, 12, 'willow']] as const) { const p = iso(tx, ty); this.shadow(p.sx, p.sy + 2, p.sy + 0.1); this.img(`tree-${kind}`, p.sx, p.sy, p.sy + 0.5) }
+    for (const [tx, ty, kind] of [[1, 6, 'pine'], [20, 8, 'oak'], [12, 12, 'blossom'], [19, 12, 'willow'], [1, 5, 'maple'], [19, 10, 'birch']] as const) { const p = iso(tx, ty); this.shadow(p.sx, p.sy + 2, p.sy + 0.1); this.img(`tree-${kind}`, p.sx, p.sy, p.sy + 0.5) }
+    // V5 street-level props on sidewalk/ground tiles (never roads or doorways):
+    // bins beside the cafe and office roads, planters by the shop and townhall.
+    for (const [bx, by] of [[7, 6], [14, 6]] as const) { const p = iso(bx, by); this.img('prop-bin', p.sx, p.sy, p.sy + 0.5) }
+    for (const [px, py] of [[2, 8], [17, 12]] as const) { const p = iso(px, py); this.img('prop-planter', p.sx, p.sy, p.sy + 0.5) }
     for (const a of engine.agents) this.ensureAgent(a.id)
     this.pathG = this.add.graphics()
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => { if (p.button === 0) this.input.setDefaultCursor('grabbing') })
@@ -184,7 +194,14 @@ export class PhaserScene extends Phaser.Scene {
       } else if (conversing) {
         // Interaction animation: small bounce, only during a real conversation.
         o.timer += delta; if (o.timer > 300) { o.timer = 0; o.frame = o.frame === 'idle' ? 'walkA' : 'idle' }
-      } else o.frame = 'idle'
+      } else {
+        // V5 idle animation: blink — idle -> idleB (eyes closed, arms
+        // raised 1px) briefly, roughly once a second, not a frozen sprite.
+        if (o.frame === 'walkA' || o.frame === 'walkB') { o.frame = 'idle'; o.timer = 0 }
+        o.timer += delta
+        if (o.frame === 'idle' && o.timer > 900) { o.frame = 'idleB'; o.timer = 0 }
+        else if (o.frame === 'idleB' && o.timer > 180) { o.frame = 'idle'; o.timer = 0 }
+      }
       o.prevX = a.pos.x; o.prevY = a.pos.y
       o.sprite.setTexture(`agent-${a.id}-${o.facing}-${o.frame}`)
       const bounce = conversing && o.frame === 'walkA' ? -2 : 0

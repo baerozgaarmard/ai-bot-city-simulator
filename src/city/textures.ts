@@ -11,12 +11,18 @@ import { BUILDING_STYLES, type BuildingStyle } from './sprites'
 
 export interface AssetEntry { key: string; category: 'tile' | 'building' | 'tree' | 'vehicle' | 'prop' | 'character' | 'shadow'; w: number; h: number; transparent: true }
 const TILE_KINDS = ['grass', 'paving', 'sidewalk', 'asphalt-x', 'asphalt-y', 'asphalt-cross', 'crosswalk', 'park'] as const
-const TREE_KINDS = ['oak', 'pine', 'blossom', 'willow'] as const
+const TREE_KINDS = ['oak', 'pine', 'blossom', 'willow', 'maple', 'birch'] as const
 const VEHICLE_KINDS = ['car-red', 'car-blue', 'car-yellow', 'van'] as const
-const PROP_KINDS = ['bench', 'lamp', 'sign', 'fountain', 'flowerbed', 'cafe-table', 'bus-shelter'] as const
+const PROP_KINDS = ['bench', 'lamp', 'sign', 'fountain', 'flowerbed', 'cafe-table', 'bus-shelter', 'bin', 'planter'] as const
+// Ground-tile variants: the same kind rendered with a different
+// deterministic seed/joint offset, so the map is not one repeated texture.
+// V5: only grass/paving/park/sidewalk get variants (v1-v3); roads keep a
+// single texture so their centrelines stay continuous across tiles.
+const TILE_VARIANTS = ['grass', 'paving', 'park', 'sidewalk'] as const
 const BUILDING_IDS = ['cafe', 'restaurant', 'shop', 'townhall', 'office', 'apartment', 'house', 'bus'] as const
 export const ASSET_MANIFEST: AssetEntry[] = [
   ...TILE_KINDS.map(k => ({ key: `tile-${k}`, category: 'tile' as const, w: 64, h: 32, transparent: true as const })),
+  ...TILE_VARIANTS.flatMap(k => [1, 2, 3].map(v => ({ key: `tile-${k}-v${v}`, category: 'tile' as const, w: 64, h: 32, transparent: true as const }))),
   ...BUILDING_IDS.map(id => ({ key: `building-${id}`, category: 'building' as const, w: 144, h: id === 'office' ? 208 : id === 'apartment' ? 164 : id === 'house' ? 92 : 128, transparent: true as const })),
   ...TREE_KINDS.map(k => ({ key: `tree-${k}`, category: 'tree' as const, w: 48, h: 64, transparent: true as const })),
   ...VEHICLE_KINDS.map(k => ({ key: `vehicle-${k}`, category: 'vehicle' as const, w: 56, h: 28, transparent: true as const })),
@@ -57,9 +63,9 @@ const rect = (set: (x: number, y: number, h: string) => void, x0: number, y0: nu
 // cells (slope +0.5) and +y is (-16,+8) cells (slope -0.5). A horizontal
 // band therefore ran across the road, not along it. Centrelines here
 // follow those two diagonals, so they stay aligned on pan/zoom.
-function tileTexture(scene: Phaser.Scene, kind: typeof TILE_KINDS[number]) {
-  const key = `tile-${kind}`; if (scene.textures.exists(key)) return
-  const rng = mulberry32(kind.length * 7919 + 13)
+function tileTexture(scene: Phaser.Scene, kind: typeof TILE_KINDS[number], variant = 0) {
+  const key = variant === 0 ? `tile-${kind}` : `tile-${kind}-v${variant}`; if (scene.textures.exists(key)) return
+  const rng = mulberry32(kind.length * 7919 + 13 + variant * 101)
   const isAsphalt = kind.startsWith('asphalt') || kind === 'crosswalk'
   pixelTexture(scene, key, 32, 16, set => {
     for (let y = 0; y < 16; y++) for (let x = 0; x < 32; x++) {
@@ -73,7 +79,8 @@ function tileTexture(scene: Phaser.Scene, kind: typeof TILE_KINDS[number]) {
       if (kind === 'park' && rng() < 0.06) c = '#f472b6' // flower speckle
       if (kind === 'park' && rng() < 0.05) c = '#16a34a' // grass tuft
       if (kind === 'paving' && rng() < 0.03) c = '#b8ab8d' // faint speckle
-      if (kind === 'paving' && x % 8 === 0) c = '#b8ab8d' // paving joints
+      if (kind === 'paving' && (x + variant * 2) % 8 === 0) c = '#b8ab8d' // paving joints, offset per variant
+      if (kind === 'sidewalk' && (x + variant) % 10 === 0) c = '#c4bba0' // sidewalk slab joints, offset per variant
       if (isAsphalt && rng() < 0.04) c = '#27272a' // asphalt wear
       // Lighter edge / curb on the diamond border, not a flat black slab.
       if (isAsphalt && d > 0.92) c = '#52525b'
@@ -105,7 +112,7 @@ function tileTexture(scene: Phaser.Scene, kind: typeof TILE_KINDS[number]) {
         bar(0.894, 0.447, -o * 0.894, o * 0.447) // bars across the y-road
       }
     }
-    if (kind === 'grass' || kind === 'park') { set(8, 5, '#16a34a'); set(22, 10, '#16a34a') }
+    if (kind === 'grass' || kind === 'park') { set(8 + variant * 2, 5, '#16a34a'); set(22 - variant * 2, 10, '#16a34a'); set(14, 3 + variant, '#15803d') }
   })
 }
 // --- Buildings: iso prism in pixels — diamond roof, two shaded faces,
@@ -181,6 +188,16 @@ function treeTexture(scene: Phaser.Scene, kind: typeof TREE_KINDS[number]) {
       // Drooping canopy: vertical strands of varied length, no round blob.
       for (let x = 4; x <= 20; x++) { const len = 10 + Math.floor(rng() * 8); for (let y = 6; y < 6 + len; y++) set(x, y, rng() < 0.7 ? '#65a30d' : '#4d7c0f') }
       for (let x = 6; x <= 18; x += 3) set(x, 5, '#365314')
+    } else if (kind === 'maple') {
+      // Broad, layered canopy in autumn reds/oranges, stout trunk.
+      rect(set, 11, 22, 13, 31, '#78350f')
+      const layers: Array<[number, number, string]> = [[6, 10, '#dc2626'], [4, 14, '#ea580c'], [8, 18, '#f59e0b']]
+      for (const [y0, y1, col] of layers) for (let y = y0; y <= y1; y++) for (let x = 12 - (y - y0) - 2; x <= 12 + (y - y0) + 2; x++) if (x >= 2 && x <= 21) set(x, y, rng() < 0.85 ? col : '#b91c1c')
+    } else if (kind === 'birch') {
+      // Slender white trunk with black marks, narrow light-green canopy.
+      rect(set, 11, 16, 13, 31, '#f8fafc')
+      for (let y = 18; y <= 30; y += 4) { set(11, y, '#1f2937'); set(13, y + 2, '#1f2937') }
+      for (let y = 4; y < 18; y++) for (let x = 12 - Math.floor((y - 4) / 2); x <= 12 + Math.floor((y - 4) / 2); x++) set(x, y, rng() < 0.8 ? '#84cc16' : '#65a30d')
     } else {
       // Irregular canopy: three overlapping clusters + noise, dark outline
       // where a canopy pixel borders empty space — no perfect circle.
@@ -222,11 +239,14 @@ function propTexture(scene: Phaser.Scene, kind: typeof PROP_KINDS[number]) {
     if (kind === 'flowerbed') { rect(set, 1, 8, 26, 12, '#78350f'); const cols = ['#f472b6', '#facc15', '#ef4444', '#f8fafc']; for (let i = 0; i < 10; i++) { set(3 + i * 2, 6, cols[i % 4]); set(3 + i * 2, 7, '#22c55e') } }
     if (kind === 'cafe-table') { rect(set, 8, 6, 19, 9, '#f8fafc'); rect(set, 13, 10, 14, 13, '#92400e'); rect(set, 2, 8, 5, 11, '#92400e'); rect(set, 22, 8, 25, 11, '#92400e') }
     if (kind === 'bus-shelter') { rect(set, 3, 4, 5, 27, '#374151'); rect(set, 30, 4, 32, 27, '#374151'); rect(set, 1, 1, 34, 4, '#1c1917'); rect(set, 1, 1, 34, 1, '#e7e5e4'); rect(set, 6, 6, 29, 17, '#bfdbfe'); rect(set, 8, 18, 27, 20, '#92400e'); rect(set, 28, 22, 34, 27, '#1d4ed8') }
+    if (kind === 'bin') { rect(set, 9, 8, 18, 24, '#374151'); rect(set, 9, 8, 18, 10, '#4b5563'); rect(set, 8, 6, 19, 8, '#1f2937'); set(13, 14, '#9ca3af'); set(14, 14, '#9ca3af'); rect(set, 10, 25, 17, 27, '#1f2937') }
+    if (kind === 'planter') { rect(set, 2, 16, 25, 24, '#92400e'); rect(set, 2, 16, 25, 18, '#78350f'); for (let i = 0; i < 5; i++) { const x = 4 + i * 4; set(x, 12, '#22c55e'); set(x + 1, 11, '#16a34a'); set(x + 2, 12, '#f472b6'); set(x, 13, '#65a30d'); set(x + 2, 13, '#65a30d') } }
   })
 }
 // Centralized loader: builds every manifest texture once, validates it.
 export function buildAllTextures(scene: Phaser.Scene): string[] {
   for (const k of TILE_KINDS) tileTexture(scene, k)
+  for (const k of TILE_VARIANTS) for (let v = 1; v <= 3; v++) tileTexture(scene, k, v)
   for (const id of BUILDING_IDS) buildingTexture(scene, id)
   for (const k of TREE_KINDS) treeTexture(scene, k)
   for (const k of VEHICLE_KINDS) vehicleTexture(scene, k)
