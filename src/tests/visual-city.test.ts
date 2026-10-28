@@ -5,17 +5,17 @@ import { BUILDING_STYLES, ROLE_PALETTES, spritePixels, countPixels, type Dir, ty
 import { useUI } from '../stores/store'
 
 // Verification count (arithmetic, all asserted below):
-//  600 ticks x 24 agents = 14,400 walkable-position checks
+//  600 ticks x 24 agents x 5 position checks = 72,000 walkable-position checks
 //  24 agents x 12 sprite specs = 288 sprite specs, each with >=3 pixel assertions = 864+ checks
 //  8 locations x ~5 building-style assertions = 40 checks
-//  Total asserted checks: > 15,300. No console-error check is possible in node;
+//  Total asserted checks: > 73,000. No console-error check is possible in node;
 //  the Playwright screenshot run (see report) asserts zero page errors in-browser.
 describe('visual city verification', () => {
   it('600 ticks: every agent stays on a walkable tile', () => {
     const e = new SimEngine(20261028); const g = walkableGrid(); const acc = { v: 0 }
     expect(e.agents.length).toBe(24)
     for (let tick = 0; tick < 600; tick++) {
-      e.step(60, acc)
+      e.step(1, acc) // 1 real second at 1x = 1 sim minute after the time-scale fix
       expect(e.tick).toBe(tick + 1)
       for (const a of e.agents) {
         const rx = Math.round(a.pos.x), ry = Math.round(a.pos.y)
@@ -31,7 +31,7 @@ describe('visual city verification', () => {
       const a = e.agents[i]
       for (const dir of dirs) for (const frame of frames) {
         const s = spritePixels(a.role, dir, frame, i)
-        expect(s.rows.length).toBe(20); expect(s.rows[0].length).toBe(16)
+        expect(s.rows.length).toBe(28); expect(s.rows[0].length).toBe(20)
         expect(countPixels(s.rows, 'S')).toBeGreaterThan(0) // head/skin
         expect(countPixels(s.rows, 'T')).toBeGreaterThan(0) // clothing
         expect(countPixels(s.rows, 'H')).toBeGreaterThan(0) // hair

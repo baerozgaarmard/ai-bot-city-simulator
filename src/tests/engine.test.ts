@@ -18,8 +18,8 @@ describe('engine', () => {
     const acc = { v: 0 }; e.step(120, acc); expect(e.tick).toBeGreaterThan(0)
   })
   it('low energy agents prefer rest over work', () => {
-    const e = new SimEngine(7); const a = e.agents[0]; a.energy = 5; a.hunger = 10; a.state = 'Idle'; a.activityUntil = 0; a.cooldownUntil = 0
-    const acc = { v: 0 }; for (let i = 0; i < 3; i++) e.step(60, acc)
+    const e = new SimEngine(7); const a = e.agents[0]; a.energy = 5; a.hunger = 10; a.state = 'Idle'; a.activityUntil = 0; a.cooldownUntil = 0; a.path = []; a.dest = null; (a as any)._target = undefined // reset the constructor's initial goal so the low-energy choice is re-made
+    const acc = { v: 0 }; for (let i = 0; i < 3; i++) e.step(1, acc)
     expect(['Resting', 'Sleeping', 'Walking']).toContain(a.state)
   })
   it('memories come from real events and can be retrieved', () => {

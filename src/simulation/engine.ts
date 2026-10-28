@@ -40,7 +40,12 @@ export class SimEngine {
   tick = 0; simMinutes = 8 * 60; seed: number; rng: () => number
   completed = 0; interactions = 0; paused = false; speed = 1
   private grid = walkableGrid(); private conv = new Map<string, { other: string; until: number }>()
-  constructor(seed = 20261028) { this.seed = seed; this.rng = mulberry32(seed); this.seedAgents() }
+  constructor(seed = 20261028) {
+    this.seed = seed; this.rng = mulberry32(seed); this.seedAgents()
+    // Agents start with a goal, not Idle: without this the first screen
+    // shows 24 idle agents and zero events until the first decision tick.
+    for (const a of this.agents) this.pickGoal(a)
+  }
   get hour() { return Math.floor(this.simMinutes / 60) % 24 }
   timeStr() { const h = this.hour, m = this.simMinutes % 60; return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}` }
   private log(category: SimEvent['category'], agent: Agent | null, loc: Location | null, message: string) {
@@ -120,10 +125,15 @@ export class SimEngine {
     this.log('GOAL', a, loc ?? null, `${a.name} completed ${a.goal.toLowerCase()}.`)
     a.cooldownUntil = this.simMinutes + 2; a.state = 'Idle'; a.activity = 'Deciding what to do next'; a.dest = null; a.path = []
   }
-  /** Advance simulation by simSeconds (already speed-scaled by caller). Movement is continuous; decisions tick every sim minute. */
+  /** Advance simulation by real seconds (already speed-scaled by caller).
+   * Time scale: 1 real second at 1x = 1 sim minute. Previously the
+   * accumulator added raw seconds, so one sim minute took 60 real
+   * seconds, activities (15-120 sim minutes) took hours, and the UI
+   * showed 24 idle agents with zero interactions/completions/events
+   * for the first minutes. Movement speed is unchanged (tiles/sec). */
   step(simSeconds: number, accumulated: { v: number }) {
     if (this.paused) return
-    accumulated.v += simSeconds
+    accumulated.v += simSeconds * 60
     // Move continuously
     for (const a of this.agents) {
       if (a.paused) continue
