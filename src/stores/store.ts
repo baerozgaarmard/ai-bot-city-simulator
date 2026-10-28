@@ -8,9 +8,11 @@ interface UIState {
   search: string; roleFilter: string; stateFilter: string; consoleSearch: string; consoleCategory: string; memorySearch: string
   set: (p: Partial<UIState>) => void; sync: () => void; select: (id: string | null) => void
 }
+// Narrow screens start with panels collapsed so the city gets the viewport.
+export const narrowAtLoad = () => typeof window !== 'undefined' && window.innerWidth < 768
 export const useUI = create<UIState>((set) => ({
   tick: 0, selectedId: null, view: 'City', paused: false, speed: 1,
-  showThoughts: true, showPaths: false, logDensity: 'normal', leftCollapsed: false, rightCollapsed: false, consoleCollapsed: false,
+  showThoughts: true, showPaths: false, logDensity: 'normal', leftCollapsed: narrowAtLoad(), rightCollapsed: narrowAtLoad(), consoleCollapsed: false,
   search: '', roleFilter: 'All', stateFilter: 'All', consoleSearch: '', consoleCategory: 'All', memorySearch: '',
   set: (p) => set(p), sync: () => set({ tick: engine.tick }), select: (id) => set({ selectedId: id }),
 }))

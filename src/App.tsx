@@ -4,8 +4,11 @@ import CityView from './components/CityView'
 import { engine } from './simulation/engine'
 import { LOCATIONS } from './simulation/map'
 import { useUI, selectedAgent } from './stores/store'
-import { focusAgent, focusLocation, resetCamera } from './city/PhaserScene'
 import { saveWorld, loadWorld } from './persistence/db'
+// Camera helpers are loaded on demand so App's first bundle never pulls in Phaser.
+const focusAgent = async (id: string) => (await import('./city/PhaserScene')).focusAgent(id)
+const focusLocation = async (id: string) => (await import('./city/PhaserScene')).focusLocation(id)
+const resetCamera = async () => (await import('./city/PhaserScene')).resetCamera()
 
 const VIEWS = [{ id: 'City', icon: Building2, label: 'City' }, { id: 'Agents', icon: Users, label: 'Agents' }, { id: 'Locations', icon: MapPin, label: 'Locations' }, { id: 'Memories', icon: Brain, label: 'Memories' }, { id: 'Event Log', icon: ListOrdered, label: 'Event Log' }, { id: 'Settings', icon: SettingsIcon, label: 'Settings' }]
 
@@ -28,8 +31,8 @@ export default function App() {
   const doLoad = async () => { try { const s = await loadWorld(); if (!s) { alert('No saved world found.'); return } engine.restore(s); ui.sync(); alert('World loaded.') } catch { alert('Saved world is corrupted or incompatible and was not loaded.') } }
   const doReset = () => { if (window.confirm('Reset the simulation? Unsaved progress will be discarded.')) { window.location.reload() } }
   return (
-    <div className="h-screen w-screen flex flex-col bg-[#0a0a0b] text-gray-100 overflow-hidden">
-      <header className="flex items-center gap-3 px-4 py-2 border-b border-gray-800 shrink-0">
+    <div className="h-dvh w-screen flex flex-col bg-[#0a0a0b] text-gray-100 overflow-hidden">
+      <header className="flex flex-wrap items-center gap-3 px-4 py-2 border-b border-gray-800 shrink-0">
         <h1 className="font-bold text-lg">AI Bot City Simulator <span className="text-xs text-gray-400">v0.1 · Smallville</span></h1>
         <button className="px-3 py-1 rounded bg-gray-800 hover:bg-gray-700" onClick={() => ui.set({ paused: !ui.paused })} aria-label="Pause or resume">{ui.paused ? <Play size={16} /> : <Pause size={16} />}</button>
         {[1, 2, 4, 8].map(s => <button key={s} className={`px-2 py-1 rounded ${ui.speed === s ? 'bg-emerald-600' : 'bg-gray-800'}`} onClick={() => ui.set({ speed: s })}>{s}x</button>)}
@@ -37,7 +40,7 @@ export default function App() {
         <button className="px-2 py-1 rounded bg-gray-800 flex items-center gap-1" onClick={doSave}><Save size={14} /> Save</button>
         <button className="px-2 py-1 rounded bg-gray-800 flex items-center gap-1" onClick={doLoad}><FolderOpen size={14} /> Load</button>
         <button className="px-2 py-1 rounded bg-gray-800 flex items-center gap-1" onClick={doReset}><RotateCcw size={14} /> Reset</button>
-        <span className="ml-auto text-sm text-gray-300">Agents: {agents.length} · Tick: {engine.tick} · Time: {engine.timeStr()} · District: Smallville</span>
+        <span className="ml-auto text-sm text-gray-300 min-h-[44px] flex items-center">Agents: {agents.length} · Tick: {engine.tick} · Time: {engine.timeStr()} · District: Smallville</span>
       </header>
       <div className="flex flex-1 min-h-0">
         <nav className="w-14 border-r border-gray-800 flex flex-col items-center py-2 gap-1 shrink-0" aria-label="Main navigation">
@@ -68,7 +71,7 @@ export default function App() {
             </div>
           </aside>
         )}
-        {ui.leftCollapsed && <button className="px-2 border-r border-gray-800 text-xs" onClick={() => ui.set({ leftCollapsed: false })}>▶ Panels</button>}
+        {ui.leftCollapsed && <button className="px-2 border-r border-gray-800 text-xs min-h-[44px]" aria-label="Show agent registry panel" onClick={() => ui.set({ leftCollapsed: false })}>▶ Panels</button>}
         <main className="flex-1 relative min-w-0 flex flex-col">
           <div className={ui.view === 'City' ? 'flex-1 min-h-0' : 'invisible absolute inset-0 overflow-hidden'}><CityView /></div>
           {ui.view !== 'City' && (
@@ -127,10 +130,11 @@ export default function App() {
             <label className="block mt-4 text-sm">Sociability: {sel.personality.sociability}<input type="range" min={0} max={100} value={sel.personality.sociability} onChange={e => { sel.personality.sociability = Number(e.target.value); ui.sync() }} className="w-full" /></label>
           </aside>
         )}
+        {ui.rightCollapsed && sel && <button className="px-2 border-l border-gray-800 text-xs min-h-[44px]" aria-label="Show agent inspector panel" onClick={() => ui.set({ rightCollapsed: false })}>◀ Inspector</button>}
       </div>
       {showAdd && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" role="dialog" aria-modal="true" aria-label="Add agent">
-          <div className="bg-gray-900 border border-gray-700 rounded p-4 w-96 space-y-3">
+          <div className="bg-gray-900 border border-gray-700 rounded p-4 w-96 max-w-[calc(100vw-2rem)] space-y-3">
             <h2 className="font-bold text-lg">Add Agent</h2>
             <label className="block text-sm">Name<input className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 mt-1" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} autoFocus /></label>
             <label className="block text-sm">Occupation<input className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 mt-1" value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} /></label>
