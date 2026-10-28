@@ -42,15 +42,38 @@ loads ordinary local PNG files through the existing asset loader
 
 ## Workflow on the GPU machine
 
+**Single command (from the repo root on Windows):**
+
+```
+tools\asset-generation\run-windows.bat
+```
+
+That launcher checks Python 3.10+, venv + requirements, `nvidia-smi`,
+CUDA PyTorch, VRAM ≥ 5.5 GB, and disk ≥ 15 GB, then runs
+`generate.py` + `validate_assets.py`. See `RUN_ON_WINDOWS_GPU.md`
+for the exact checks, time estimate, and resume instructions.
+
+Manual workflow (same steps the launcher automates):
+
 1. Follow `RUN_ON_WINDOWS_GPU.md` to install torch (CUDA) + diffusers.
 2. `python generate.py` — resumable: assets already in `outputs/raw/`
    with a matching record are skipped unless `--force` is passed.
+   Revisions are resolved at run time (no FILL-IN placeholders) and
+   weights are cached once in `HF_HOME`.
 3. `python validate_assets.py` — fix or reject failures, do not
    integrate a failed asset.
 4. Visually inspect `outputs/contact-sheet.png` side by side.
-5. Copy approved assets to `public/v4-assets/`, update
-   `src/city/textures.ts` manifest + `PhaserScene.preload()`, run
-   `npm run build && npm test && npm run test:e2e`, then commit/push/deploy.
+5. Copy approved PNG + record JSON into `outputs/approved/`, then
+   run `python integrate.py` — it re-validates, copies ONLY passing
+   assets to `public/v4-assets/`, writes
+   `public/v4-assets/manifest.json`, builds an integrated contact
+   sheet, marks copied assets `integrated` in `asset-manifest.json`,
+   and prints the Phaser preload wiring to add by hand.
+6. Add that wiring to `src/city/textures.ts` manifest +
+   `PhaserScene.preload()`, run
+   `npm run build && npm test && npm run test:e2e`, screenshot
+   default / close / follow / narrow views, then commit/push/deploy
+   — deploy only after the integrated result passes verification.
 
 ## Rules that must not be broken
 

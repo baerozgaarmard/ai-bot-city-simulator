@@ -116,3 +116,57 @@ describe('pipeline must not break existing behaviour', () => {
     expect(narrowAtLoad()).toBe(false)
   })
 })
+
+describe('V4 Windows GPU pipeline (launcher + integrate)', () => {
+  it('run-windows.bat exists and checks, in order: python, nvidia-smi, torch.cuda, VRAM, disk, generate, validate, integrate', async () => {
+    const fs = await import('node:fs'); const path = await import('node:path')
+    const bat = fs.readFileSync(path.join(process.cwd(), 'tools', 'asset-generation', 'run-windows.bat'), 'utf8')
+    const steps = ['Python 3.10', 'nvidia-smi', 'torch.cuda.is_available', '5.5', '15 GB', 'generate.py', 'validate_assets.py', 'integrate.py']
+    let prev = -1
+    for (const s of steps) {
+      const idx = bat.indexOf(s)
+      expect(idx, `launcher missing/ordered step: ${s}`).toBeGreaterThan(prev)
+      prev = idx
+    }
+    // HF_HOME is set in step 7 (after the disk check, before generate);
+    // it also appears in the header comment, so check the set command.
+    expect(bat).toContain('set "HF_HOME=')
+    expect(bat).toContain('will NOT run generation on CPU')
+    expect(bat).toContain('tools\\asset-generation\\run-windows.bat')
+  })
+  it('generate.py resolves real revisions, caches weights once, and refuses without CUDA', async () => {
+    const fs = await import('node:fs'); const path = await import('node:path')
+    const gen = fs.readFileSync(path.join(process.cwd(), 'tools', 'asset-generation', 'generate.py'), 'utf8')
+    expect(gen).toContain('HfApi')
+    expect(gen).toContain('model_info')
+    expect(gen).toContain('snapshot_download')
+    expect(gen).toContain('HF_HOME')
+    expect(gen).toContain('enable_sequential_cpu_offload')
+    expect(gen).toContain('No CUDA GPU detected')
+    // No placeholder revision value may be written into a record.
+    expect(gen).not.toContain('base_model_revision": "FILL-IN')
+    expect(gen).not.toContain('lora_revision": "FILL-IN')
+  })
+  it('integrate.py copies only approved validated assets and writes a Phaser manifest', async () => {
+    const fs = await import('node:fs'); const path = await import('node:path')
+    const integ = fs.readFileSync(path.join(process.cwd(), 'tools', 'asset-generation', 'integrate.py'), 'utf8')
+    expect(integ).toContain('outputs/approved')
+    expect(integ).toContain('public/v4-assets')
+    expect(integ).toContain('manifest.json')
+    expect(integ).toContain('bottom-centre')
+    expect(integ).toContain('border_opaque_fraction')
+    expect(integ).toContain('"integrated"')
+    expect(integ).toContain('contact-sheet-integrated')
+  })
+  it('asset manifest defines integrated status and all 12 assets are still pending (no fake generation)', async () => {
+    const fs = await import('node:fs'); const path = await import('node:path')
+    const m = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'tools', 'asset-generation', 'asset-manifest.json'), 'utf8'))
+    expect(m.assets.length).toBe(12)
+    expect(m.status_definitions.integrated).toContain('integrate.py')
+    for (const a of m.assets) expect(a.status).toBe('pending')
+    const walk = (d: string): string[] => fs.existsSync(d) ? fs.readdirSync(d, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]) : []
+    for (const f of [...walk(path.join(process.cwd(), 'public')), ...walk(path.join(process.cwd(), 'tools', 'asset-generation'))]) {
+      expect(f).not.toMatch(/\.(safetensors|ckpt|pt)$/)
+    }
+  })
+})

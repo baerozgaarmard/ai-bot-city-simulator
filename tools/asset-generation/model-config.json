@@ -1,1 +1,40 @@
-{"chosen":{"alternative_lora":"SedatAl/pixel-art-LoRa (also SD 1.5, fine-tuned on the diffusiondb-pixelart dataset; licence likewise not stated in the fetched card)","base_model":"stable-diffusion-v1-5/stable-diffusion-v1-5","base_model_license_reported":"CreativeML OpenRAIL-M (reported for the original checkpoint and its mirrors in search results; verify the LICENSE file in the downloaded repo before any commercial use)","base_model_note":"Community mirror of the original runwayml/stable-diffusion-v1-5. The original RunwayML Hugging Face organisation was deleted in August 2024, so the original repo path no longer resolves. Verify the mirror's files and licence at download time; do not assume the mirror is identical without checking its commit hash.","base_model_revision":"NOT PINNED — record the exact commit hash returned by huggingface_hub snapshot_download at generation time in outputs/raw/<id>.json","lora":"VaroDZAKY/Varo_pixel_Art","lora_base":"Stable Diffusion v1.5","lora_license":"NOT STATED in the fetched model card (checked 2026-10-28). Verify the repo's licence/metadata before commercial redistribution; do not assume a licence.","lora_resolution":"512x512","lora_revision":"NOT PINNED — record the exact commit hash at generation time","lora_trigger":"pixelart_style","rejected_for_this_project":"thliang01/pixel-art-sdxl-dora-v0-9 — SDXL DoRA, not SD 1.5 compatible; attaching it to an SD 1.5 base would be an architecture mismatch"},"cpu_fallback_considered_not_used_here":{"model":"nota-ai/bk-sdm-tiny-2m","params_total":"0.50B (U-Net 0.33B)","tiny_vae":"sayakpaul/taesd-diffusers","why_not_used_in_vm":"Even this distilled model is documented as needing ~8 GB RAM + 12 CPU cores for slow CPU generation, and 16-32 GB RAM and/or a GPU for practical speed. The Muse VM has 2 cores and ~3.6 GB RAM available, so a CPU test was judged impractical and was not started (no weights downloaded)."},"generated_in_this_vm":"none","inference_settings_for_6gb_vram":{"batch_size":1,"device":"cuda","download_size_estimate":"~4.27 GB for the SD 1.5 ema-only fp16 weights (per the original model card), plus the LoRA file (confirm its size on the repo Files tab at download time)","enable_attention_slicing":true,"enable_sequential_cpu_offload":false,"enable_vae_slicing":true,"guidance_scale":7.5,"height":512,"num_inference_steps":28,"offload_note":"Enable sequential CPU offload ONLY if a 6 GB run OOMs; it is much slower.","safety_checker":"disabled only for local game-asset generation of non-sensitive content; keep it enabled if the workflow is ever shared","torch_dtype":"float16","width":512},"weights_location":"Hugging Face cache only (HF_HOME). NEVER in public/, never in git, never in the Vercel deployment."}
+{
+  "chosen": {
+    "alternative_lora": "SedatAl/pixel-art-LoRa (also SD 1.5, fine-tuned on the diffusiondb-pixelart dataset; licence likewise not stated in the fetched card)",
+    "base_model": "stable-diffusion-v1-5/stable-diffusion-v1-5",
+    "base_model_license_reported": "CreativeML OpenRAIL-M (reported for the original checkpoint and its mirrors in search results; verify the LICENSE file in the downloaded repo before any commercial use)",
+    "base_model_note": "Community mirror of the original runwayml/stable-diffusion-v1-5. The original RunwayML Hugging Face organisation was deleted in August 2024, so the original repo path no longer resolves. Verify the mirror's files and licence at download time; do not assume the mirror is identical without checking its commit hash.",
+    "base_model_revision": "Resolved at generation time by generate.py via HfApi().model_info().sha and written into outputs/raw/<id>.json and outputs/models.json \u2014 never left as FILL-IN.",
+    "lora": "VaroDZAKY/Varo_pixel_Art",
+    "lora_base": "Stable Diffusion v1.5",
+    "lora_license": "NOT STATED in the fetched model card (checked 2026-10-28). Verify the repo's licence/metadata before commercial redistribution; do not assume a licence.",
+    "lora_resolution": "512x512",
+    "lora_revision": "Resolved at generation time by generate.py via HfApi().model_info().sha and written into outputs/raw/<id>.json and outputs/models.json \u2014 never left as FILL-IN.",
+    "lora_trigger": "pixelart_style",
+    "rejected_for_this_project": "thliang01/pixel-art-sdxl-dora-v0-9 \u2014 SDXL DoRA, not SD 1.5 compatible; attaching it to an SD 1.5 base would be an architecture mismatch",
+    "trade_off_note": "SD 1.5 + Varo pixel-art LoRA was kept after verification: it is the only verified SD 1.5-compatible LoRA found with a documented Diffusers example and trigger; SDXL alternatives (e.g. thliang01/pixel-art-sdxl-dora-v0-9) would need more VRAM and are architecture-incompatible with SD 1.5, and the distilled bk-sdm-tiny model trades away most detail for CPU feasibility. Trade-off: SD 1.5 gives consistent 512px game art on 6 GB VRAM, but its LoRA licence is unverified \u2014 verify before commercial redistribution, or swap to a licenced LoRA with the same base."
+  },
+  "cpu_fallback_considered_not_used_here": {
+    "model": "nota-ai/bk-sdm-tiny-2m",
+    "params_total": "0.50B (U-Net 0.33B)",
+    "tiny_vae": "sayakpaul/taesd-diffusers",
+    "why_not_used_in_vm": "Even this distilled model is documented as needing ~8 GB RAM + 12 CPU cores for slow CPU generation, and 16-32 GB RAM and/or a GPU for practical speed. The Muse VM has 2 cores and ~3.6 GB RAM available, so a CPU test was judged impractical and was not started (no weights downloaded)."
+  },
+  "generated_in_this_vm": "none",
+  "inference_settings_for_6gb_vram": {
+    "batch_size": 1,
+    "device": "cuda",
+    "download_size_estimate": "~4.27 GB for the SD 1.5 ema-only fp16 weights (per the original model card), plus the LoRA file (confirm its size on the repo Files tab at download time)",
+    "enable_attention_slicing": true,
+    "enable_sequential_cpu_offload": false,
+    "enable_vae_slicing": true,
+    "guidance_scale": 7.5,
+    "height": 512,
+    "num_inference_steps": 28,
+    "offload_note": "Enable sequential CPU offload ONLY if a 6 GB run OOMs; it is much slower.",
+    "safety_checker": "disabled only for local game-asset generation of non-sensitive content; keep it enabled if the workflow is ever shared",
+    "torch_dtype": "float16",
+    "width": 512
+  },
+  "weights_location": "Hugging Face cache only (HF_HOME). NEVER in public/, never in git, never in the Vercel deployment."
+}
