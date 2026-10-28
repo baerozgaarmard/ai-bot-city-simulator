@@ -1,0 +1,11 @@
+# Development-time only. Install into a venv, never into the Vite app.
+# Versions are ranges on purpose: pin exact versions only after a
+# successful run on the target GPU machine, then record them here.
+torch>=2.3
+diffusers>=0.30
+transformers>=4.40
+accelerate>=0.30
+safetensors>=0.4
+huggingface_hub>=0.23
+Pillow>=10.0
+numpy>=1.26

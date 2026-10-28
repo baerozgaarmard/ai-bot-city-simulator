@@ -7,3 +7,7 @@ dist/
 tsconfig.tsbuildinfo
 screenshots/
 test-results/
+tools/asset-generation/outputs/
+tools/asset-generation/models/
+
+__pycache__/
