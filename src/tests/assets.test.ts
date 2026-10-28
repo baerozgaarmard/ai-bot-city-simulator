@@ -16,7 +16,7 @@ describe('asset manifest', () => {
     for (const k of ['oak', 'pine', 'blossom']) expect(keys).toContain(`tree-${k}`)
     for (const k of ['car-red', 'car-blue', 'van']) expect(keys).toContain(`vehicle-${k}`)
     for (const k of ['bench', 'lamp', 'sign', 'fountain', 'flowerbed', 'cafe-table', 'bus-shelter']) expect(keys).toContain(`prop-${k}`)
-    for (const k of ['grass', 'paving', 'asphalt-h', 'asphalt-v', 'crosswalk', 'park']) expect(keys).toContain(`tile-${k}`)
+    for (const k of ['grass', 'paving', 'sidewalk', 'asphalt-x', 'asphalt-y', 'asphalt-cross', 'crosswalk', 'park']) expect(keys).toContain(`tile-${k}`)
   })
   it('character sprites are 24x32 with transparent corners and distinct walk frames', () => {
     const e = new SimEngine(1)

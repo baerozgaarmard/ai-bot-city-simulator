@@ -10,7 +10,7 @@ import { mulberry32 } from '../simulation/rng'
 import { BUILDING_STYLES, type BuildingStyle } from './sprites'
 
 export interface AssetEntry { key: string; category: 'tile' | 'building' | 'tree' | 'vehicle' | 'prop' | 'character' | 'shadow'; w: number; h: number; transparent: true }
-const TILE_KINDS = ['grass', 'paving', 'asphalt-h', 'asphalt-v', 'crosswalk', 'park'] as const
+const TILE_KINDS = ['grass', 'paving', 'sidewalk', 'asphalt-x', 'asphalt-y', 'asphalt-cross', 'crosswalk', 'park'] as const
 const TREE_KINDS = ['oak', 'pine', 'blossom', 'willow'] as const
 const VEHICLE_KINDS = ['car-red', 'car-blue', 'car-yellow', 'van'] as const
 const PROP_KINDS = ['bench', 'lamp', 'sign', 'fountain', 'flowerbed', 'cafe-table', 'bus-shelter'] as const
@@ -51,9 +51,16 @@ const rect = (set: (x: number, y: number, h: string) => void, x0: number, y0: nu
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(x, y, hex)
 }
 // --- Ground tiles: 32x16 diamond, per-pixel texture, no flat colour ---
+// Marking geometry, fixed from V3: V3 drew a horizontal band for the
+// east-west road and a vertical band for the north-south road, but in
+// iso texture space the grid axes are diagonals — +x is (+16,+8) texture
+// cells (slope +0.5) and +y is (-16,+8) cells (slope -0.5). A horizontal
+// band therefore ran across the road, not along it. Centrelines here
+// follow those two diagonals, so they stay aligned on pan/zoom.
 function tileTexture(scene: Phaser.Scene, kind: typeof TILE_KINDS[number]) {
   const key = `tile-${kind}`; if (scene.textures.exists(key)) return
   const rng = mulberry32(kind.length * 7919 + 13)
+  const isAsphalt = kind.startsWith('asphalt') || kind === 'crosswalk'
   pixelTexture(scene, key, 32, 16, set => {
     for (let y = 0; y < 16; y++) for (let x = 0; x < 32; x++) {
       const d = Math.abs(x - 15.5) / 16 + Math.abs(y - 7.5) / 8
@@ -61,18 +68,43 @@ function tileTexture(scene: Phaser.Scene, kind: typeof TILE_KINDS[number]) {
       let c = '#c9bfa5'
       if (kind === 'grass' || kind === 'park') c = rng() < 0.5 ? '#4ade80' : '#22c55e'
       if (kind === 'paving') c = rng() < 0.5 ? '#d6c9b0' : '#cfc2a6'
-      if (kind === 'asphalt-h' || kind === 'asphalt-v' || kind === 'crosswalk') c = rng() < 0.5 ? '#3f3f46' : '#38383f'
+      if (kind === 'sidewalk') c = rng() < 0.5 ? '#ddd6c4' : '#d0c5ab'
+      if (isAsphalt) c = rng() < 0.5 ? '#3a3a41' : '#34343b'
       if (kind === 'park' && rng() < 0.06) c = '#f472b6' // flower speckle
       if (kind === 'park' && rng() < 0.05) c = '#16a34a' // grass tuft
       if (kind === 'paving' && rng() < 0.03) c = '#b8ab8d' // faint speckle
       if (kind === 'paving' && x % 8 === 0) c = '#b8ab8d' // paving joints
-      if ((kind === 'asphalt-h' || kind === 'asphalt-v') && rng() < 0.04) c = '#27272a' // asphalt wear
+      if (isAsphalt && rng() < 0.04) c = '#27272a' // asphalt wear
+      // Lighter edge / curb on the diamond border, not a flat black slab.
+      if (isAsphalt && d > 0.92) c = '#52525b'
+      if (kind === 'sidewalk' && d > 0.92) c = '#a8a29e'
       set(x, y, c)
     }
-    // Outline + markings, drawn on top of the texture.
-    if (kind === 'asphalt-h') rect(set, 10, 7, 21, 8, '#facc15')
-    if (kind === 'asphalt-v') rect(set, 15, 2, 16, 13, '#facc15')
-    if (kind === 'crosswalk') { for (let x = 6; x <= 26; x += 5) rect(set, x, 2, x + 2, 13, '#f8fafc') }
+    // Dashed yellow centreline along the road's own iso diagonal.
+    const centreline = (slope: 1 | -1) => {
+      for (let x = 2; x < 30; x++) {
+        const yLine = 7.5 + slope * 0.5 * (x - 15.5)
+        const y = Math.round(yLine)
+        if (Math.floor(x / 6) % 2 === 0 && y >= 0 && y < 16) set(x, y, '#facc15')
+      }
+    }
+    if (kind === 'asphalt-x' || kind === 'asphalt-cross') centreline(1)
+    if (kind === 'asphalt-y' || kind === 'asphalt-cross') centreline(-1)
+    // Crosswalk: white bars perpendicular to traffic, on both crossings
+    // of a 4-way intersection. A bar is a short line parallel to one iso
+    // diagonal, offset along the other, so stripes never run along the road.
+    if (kind === 'crosswalk') {
+      const bar = (dx: number, dy: number, ox: number, oy: number) => {
+        for (let t = -7; t <= 7; t++) {
+          const x = Math.round(15.5 + ox + dx * t), y = Math.round(7.5 + oy + dy * t)
+          if (x >= 0 && x < 32 && y >= 0 && y < 16) { set(x, y, '#f8fafc'); if (y + 1 < 16) set(x, y + 1, '#f8fafc') }
+        }
+      }
+      for (const o of [-9, 0, 9]) {
+        bar(-0.894, 0.447, o * 0.894, o * 0.447) // bars across the x-road
+        bar(0.894, 0.447, -o * 0.894, o * 0.447) // bars across the y-road
+      }
+    }
     if (kind === 'grass' || kind === 'park') { set(8, 5, '#16a34a'); set(22, 10, '#16a34a') }
   })
 }

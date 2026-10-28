@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
 import { engine } from '../simulation/engine'
-import { GRID_W, GRID_H, LOCATIONS } from '../simulation/map'
+import { GRID_W, GRID_H, LOCATIONS, CROSSWALKS, roadAt, roadKind, sidewalkAt } from '../simulation/map'
 import { useUI } from '../stores/store'
 import { spritePixels, type Dir, type Frame } from './sprites'
 import { buildAllTextures } from './textures'
@@ -79,14 +79,23 @@ export class PhaserScene extends Phaser.Scene {
     buildAllTextures(this) // throws if any manifest texture is missing
     this.fitView()
     // Ground: one pixel-textured diamond sprite per tile, below everything.
+    // Render order: terrain -> road surfaces/markings (tile texture) ->
+    // sidewalks/curbs (ground tiles, adjacent tiles only, never overlapping
+    // a road tile) -> props -> buildings/vehicles/characters (depth by sy).
     for (let y = 0; y < GRID_H; y++) for (let x = 0; x < GRID_W; x++) {
       const { sx, sy } = iso(x, y)
-      const isRoad = y === 7 || x === 10
       const isPark = LOCATIONS.find(l => l.id === 'park')!.tiles.some(t => t.x === x && t.y === y)
       // Paved path through the park centre (x=10 column), not just grass.
-      const kind = isRoad && x === 10 && y === 7 ? 'crosswalk' : isRoad && y === 7 ? 'asphalt-h' : isRoad ? 'asphalt-v' : isPark && x === 10 ? 'paving' : isPark ? 'park' : 'paving'
+      const kind = roadAt(x, y) ? (CROSSWALKS.has(`${x},${y}`) ? 'crosswalk' : roadKind(x, y)) : isPark && x === 10 ? 'paving' : isPark ? 'park' : sidewalkAt(x, y) ? 'sidewalk' : 'paving'
       const im = this.add.image(sx, sy, `tile-${kind}`).setOrigin(0.5, 0.5).setDepth(sy)
       im.texture.setFilter(Phaser.Textures.FilterMode.NEAREST)
+    }
+    // Subtle manhole covers on road tiles only, at ground depth (+0.05),
+    // so they never float above buildings or cover a doorway.
+    for (const [mx, my] of [[12, 7], [10, 11], [14, 5]] as const) {
+      const p = iso(mx, my)
+      const mh = this.add.ellipse(p.sx, p.sy, 12, 6, 0x27272a, 0.8).setDepth(p.sy + 0.05)
+      mh.setStrokeStyle(1, 0x52525b)
     }
     // Buildings, each on its real map location; entrances stay walkable.
     for (const loc of LOCATIONS) {
@@ -129,8 +138,11 @@ export class PhaserScene extends Phaser.Scene {
     // entrances never detour there, so agents do not walk through them).
     for (const [ax, ay] of [[1, 1], [20, 14]] as const) { const p = iso(ax, ay); this.shadow(p.sx, p.sy + 2, p.sy + 0.1, 2.4); this.img('building-apartment', p.sx, p.sy + 8, p.sy + 1) }
     // Street furniture, trees, and parked vehicles with directional orientation.
-    for (const [lx, ly] of [[0, 7], [21, 7], [10, 0], [10, 15], [5, 7], [15, 7]] as const) { const p = iso(lx, ly); this.img('prop-lamp', p.sx, p.sy, p.sy + 0.5) }
-    for (const [cx2, cy2, kind, flip] of [[2, 7, 'car-red', 1], [18, 7, 'car-blue', -1], [10, 3, 'van', 1], [10, 12, 'car-yellow', -1]] as const) { const p = iso(cx2, cy2); this.shadow(p.sx, p.sy + 4, p.sy + 0.1, 1.6); this.img(`vehicle-${kind}`, p.sx, p.sy + 6, p.sy + 0.5, flip) }
+    // Lamps and parked cars sit on sidewalk tiles beside roads, never in
+    // the carriageway itself (V3 put both on road tiles, blocking the
+    // visual lane and letting agents appear to walk through parked cars).
+    for (const [lx, ly] of [[0, 6], [21, 8], [9, 0], [11, 15], [5, 6], [15, 6]] as const) { const p = iso(lx, ly); this.img('prop-lamp', p.sx, p.sy, p.sy + 0.5) }
+    for (const [cx2, cy2, kind, flip] of [[2, 6, 'car-red', 1], [18, 6, 'car-blue', -1], [11, 3, 'van', 1], [11, 12, 'car-yellow', -1]] as const) { const p = iso(cx2, cy2); this.shadow(p.sx, p.sy + 4, p.sy + 0.1, 1.6); this.img(`vehicle-${kind}`, p.sx, p.sy + 6, p.sy + 0.5, flip) }
     for (const [tx, ty, kind] of [[1, 6, 'pine'], [20, 8, 'oak'], [12, 12, 'blossom'], [19, 12, 'willow']] as const) { const p = iso(tx, ty); this.shadow(p.sx, p.sy + 2, p.sy + 0.1); this.img(`tree-${kind}`, p.sx, p.sy, p.sy + 0.5) }
     for (const a of engine.agents) this.ensureAgent(a.id)
     this.pathG = this.add.graphics()
