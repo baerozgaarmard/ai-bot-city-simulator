@@ -57,4 +57,30 @@ describe('engine', () => {
     e.addAgent({ name: 'Zoe Test', role: 'Tester', personality: { sociability: 50, energyNeed: 50, curiosity: 50, routine: 50 }, locationId: 'cafe', energy: 80, mood: 70 })
     expect(e.agents.length).toBe(before + 1)
   })
+  it('resetting a Conversing agent unwinds the conversation instead of leaving a stale conv entry', () => {
+    // Regression: resetAgent left the agent's entry in the conv map, so
+    // arrive() would never pick it as a conversation partner again (it
+    // requires !conv.has(o.id)), and its partner kept Conversing with
+    // someone who had been reset away.
+    const e = new SimEngine(77); const park = LOCATIONS.find(l => l.id === 'park')!
+    const [a, b, c] = e.agents
+    for (const ag of [a, b]) {
+      ag.pos = { ...park.entrance }; ag.state = 'Socializing'; ag.path = []; ag.dest = null
+      ag.activityUntil = e.simMinutes + 40; ag.cooldownUntil = 0
+      ;(ag as any)._target = { loc: park, state: 'Socializing', activity: 'Socializing', durationMin: 40 }
+    }
+    ;(e as any).arrive(a)
+    expect(a.state).toBe('Conversing'); expect(b.state).toBe('Conversing')
+    e.resetAgent(b.id)
+    expect(b.state).toBe('Idle'); expect(a.state).toBe('Idle')
+    expect((e as any).conv.size).toBe(0)
+    // b can be a conversation partner again
+    for (const ag of [b, c]) {
+      ag.pos = { ...park.entrance }; ag.state = 'Socializing'; ag.path = []; ag.dest = null
+      ag.activityUntil = e.simMinutes + 40; ag.cooldownUntil = 0
+      ;(ag as any)._target = { loc: park, state: 'Socializing', activity: 'Socializing', durationMin: 40 }
+    }
+    ;(e as any).arrive(c)
+    expect(c.state).toBe('Conversing'); expect(b.state).toBe('Conversing')
+  })
 })

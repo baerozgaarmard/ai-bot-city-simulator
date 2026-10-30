@@ -174,7 +174,24 @@ export class SimEngine {
     const a: Agent = { id: `agent-${Date.now()}`, name: input.name, role: input.role, color: pick(this.rng, COLORS), personality: input.personality, pos: { ...loc.entrance }, dest: null, path: [], state: 'Idle', activity: 'Arriving', goal: 'Settle in', intention: 'Settle in', thought: 'New in Smallville.', energy: input.energy, hunger: 20, mood: input.mood, sociability: input.personality.sociability, confidence: 60, home: 'residential', workplace: 'office', paused: false, activityUntil: 0, cooldownUntil: 0, relationships: {}, recentActions: [] }
     this.agents.push(a); this.log('SYSTEM', a, loc, `${a.name} joined Smallville as ${a.role}.`); return a
   }
-  resetAgent(id: string) { const a = this.agents.find(x => x.id === id); if (!a) return; a.state = 'Idle'; a.path = []; a.dest = null; a.energy = 80; a.hunger = 20; a.mood = 70; a.activity = 'Reset'; a.goal = 'Settle in' }
+  resetAgent(id: string) {
+    const a = this.agents.find(x => x.id === id); if (!a) return
+    // Unwind any conversation: without this the agent's conv entry stayed
+    // in the map, so arrive() would never pick it as a conversation partner
+    // again (it requires !conv.has(o.id)), and its partner kept talking to
+    // someone who had been reset away. Deleting both sides releases the
+    // partner now instead of leaving it Conversing until its timer fires.
+    const conv = this.conv.get(id)
+    if (conv) {
+      this.conv.delete(id)
+      const other = this.agents.find(x => x.id === conv.other)
+      if (other && this.conv.get(other.id)?.other === id) {
+        this.conv.delete(other.id)
+        if (other.state === 'Conversing') { other.state = 'Idle'; other.activity = 'Finished conversation' }
+      }
+    }
+    a.state = 'Idle'; a.path = []; a.dest = null; a.energy = 80; a.hunger = 20; a.mood = 70; a.activity = 'Reset'; a.goal = 'Settle in'
+  }
   snapshot() { return JSON.parse(JSON.stringify({ agents: this.agents, memories: this.memories, events: this.events.slice(0, 200), tick: this.tick, simMinutes: this.simMinutes, seed: this.seed, completed: this.completed, interactions: this.interactions })) }
   restore(s: any) { this.agents = s.agents; this.memories = s.memories; this.events = s.events; this.tick = s.tick; this.simMinutes = s.simMinutes; this.completed = s.completed; this.interactions = s.interactions }
 }
