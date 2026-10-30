@@ -193,6 +193,17 @@ export class SimEngine {
     a.state = 'Idle'; a.path = []; a.dest = null; a.energy = 80; a.hunger = 20; a.mood = 70; a.activity = 'Reset'; a.goal = 'Settle in'
   }
   snapshot() { return JSON.parse(JSON.stringify({ agents: this.agents, memories: this.memories, events: this.events.slice(0, 200), tick: this.tick, simMinutes: this.simMinutes, seed: this.seed, completed: this.completed, interactions: this.interactions })) }
-  restore(s: any) { this.agents = s.agents; this.memories = s.memories; this.events = s.events; this.tick = s.tick; this.simMinutes = s.simMinutes; this.completed = s.completed; this.interactions = s.interactions }
+  restore(s: any) {
+    this.agents = s.agents; this.memories = s.memories; this.events = s.events; this.tick = s.tick; this.simMinutes = s.simMinutes; this.completed = s.completed; this.interactions = s.interactions
+    // Clear live conversation timers: they are not part of the snapshot,
+    // and a stale entry from the pre-load session would outlive the load
+    // — its `until` is on the old timeline, so a restored Conversing
+    // agent could stay Conversing, talking to nobody, until that stale
+    // timer passed, and a restored Socializing agent could never be
+    // picked as a partner again (arrive() requires !conv.has(o.id)).
+    // Clearing matches a fresh page load, where the guard releases
+    // restored Conversing agents on the next tick.
+    this.conv.clear()
+  }
 }
 export const engine = new SimEngine()

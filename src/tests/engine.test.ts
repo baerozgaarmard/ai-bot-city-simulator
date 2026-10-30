@@ -52,6 +52,34 @@ describe('engine', () => {
     const acc = { v: 0 }; for (let i = 0; i < 200; i++) e2.step(1, acc)
     expect(e2.agents[0].state).not.toBe('Conversing')
   })
+  it('loading a save clears live conversation state instead of leaving stale conv entries', () => {
+    // Regression: restore() replaced the agents but kept the live conv
+    // map. Loading an older save while a conversation was live left a
+    // stale entry whose `until` was in the restored timeline's future:
+    // a restored Conversing agent stayed Conversing, talking to nobody,
+    // until that stale timer passed, and a restored Socializing agent
+    // could never be picked as a conversation partner again (arrive()
+    // requires !conv.has(o.id), and the guard only runs for Conversing
+    // agents, so the stale entry never expired for it).
+    const e = new SimEngine(77); const park = LOCATIONS.find(l => l.id === 'park')!
+    const [a, b] = e.agents
+    for (const ag of [a, b]) {
+      ag.pos = { ...park.entrance }; ag.state = 'Socializing'; ag.path = []; ag.dest = null
+      ag.activityUntil = e.simMinutes + 40; ag.cooldownUntil = 0
+      ;(ag as any)._target = { loc: park, state: 'Socializing', activity: 'Socializing', durationMin: 40 }
+    }
+    ;(e as any).arrive(a)
+    expect(a.state).toBe('Conversing'); expect((e as any).conv.size).toBe(2)
+    // Simulate loading an older save: rewind the clock, partner elsewhere.
+    const snap = e.snapshot()
+    snap.simMinutes = e.simMinutes - 200
+    snap.agents[0].state = 'Conversing'; snap.agents[0].path = []
+    snap.agents[1].state = 'Working'; snap.agents[1].path = []
+    e.restore(snap)
+    expect((e as any).conv.size).toBe(0)
+    const acc = { v: 0 }; for (let i = 0; i < 5; i++) e.step(1, acc)
+    expect(e.agents[0].state).not.toBe('Conversing')
+  })
   it('add agent appears and ticks', () => {
     const e = new SimEngine(5); const before = e.agents.length
     e.addAgent({ name: 'Zoe Test', role: 'Tester', personality: { sociability: 50, energyNeed: 50, curiosity: 50, routine: 50 }, locationId: 'cafe', energy: 80, mood: 70 })
