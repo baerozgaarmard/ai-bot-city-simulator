@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { astar } from '../simulation/pathfinding'
-import { walkableGrid } from '../simulation/map'
+import { walkableGrid, LOCATIONS } from '../simulation/map'
 import { SimEngine } from '../simulation/engine'
 import { WorldSchema } from '../persistence/db'
 
@@ -28,6 +28,23 @@ describe('engine', () => {
     expect(e.relevantMemories(a.id, b.id)[0].summary).toContain('Bob')
   })
   it('world snapshot validates with Zod', () => { const e = new SimEngine(3); expect(() => WorldSchema.parse(e.snapshot())).not.toThrow() })
+  it('goal at the agent\'s current entrance sets activityUntil instead of instantly completing', () => {
+    // Regression: setGoal used to set the target state directly when the
+    // path was empty (already at the entrance) without setting
+    // activityUntil, so the next decision tick instantly "completed" a goal
+    // the agent never spent time on — and re-picking the same location
+    // looped one fake completion per minute.
+    const e = new SimEngine(11); const a = e.agents[0]
+    const home = LOCATIONS.find(l => l.id === 'residential')!
+    a.pos = { ...home.entrance }; a.state = 'Idle'; a.path = []; a.dest = null
+    a.activityUntil = e.simMinutes - 10; a.cooldownUntil = 0 // stale value from a previous activity
+    ;(e as any).setGoal(a, 'Rest', home, 'Resting', 'Resting at home', 60)
+    expect(a.state).toBe('Resting'); expect(a.activityUntil).toBe(e.simMinutes + 60)
+    const acc = { v: 0 }; e.step(1, acc)
+    expect(a.state).toBe('Resting'); expect(a.recentActions).not.toContain('Rest at Residential District')
+    for (let i = 0; i < 61; i++) e.step(1, acc)
+    expect(a.recentActions.filter(r => r === 'Rest at Residential District').length).toBe(1)
+  })
   it('restored Conversing agent is not stuck: the conv timer is not in the snapshot, so a missing entry must release it', () => {
     const e = new SimEngine(11); const a = e.agents[0]
     a.state = 'Conversing'; a.path = []; a.activityUntil = e.simMinutes + 40; a.cooldownUntil = 0

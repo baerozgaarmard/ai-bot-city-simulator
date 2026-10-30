@@ -77,7 +77,13 @@ export class SimEngine {
   private setGoal(a: Agent, goal: string, loc: Location, state: AgentState, activity: string, durationMin: number) {
     const path = astar(this.grid, { x: Math.round(a.pos.x), y: Math.round(a.pos.y) }, loc.entrance)
     if (!path.length && !(Math.round(a.pos.x) === loc.entrance.x && Math.round(a.pos.y) === loc.entrance.y)) return
-    a.goal = goal; a.dest = loc.entrance; a.path = path; a.state = path.length ? 'Walking' : state; a.activity = path.length ? `Walking to ${loc.name}` : activity; a.intention = goal; a.thought = `Heading to ${loc.name} to ${goal.toLowerCase()}.`; (a as any)._target = { loc, state, activity, durationMin }
+    a.goal = goal; a.dest = loc.entrance; a.path = path; a.intention = goal; (a as any)._target = { loc, state, activity, durationMin }
+    if (path.length) { a.state = 'Walking'; a.activity = `Walking to ${loc.name}`; a.thought = `Heading to ${loc.name} to ${goal.toLowerCase()}.` }
+    // Already at the entrance: arrive now. Previously the state was set
+    // directly without activityUntil, so the next decision tick instantly
+    // "completed" a goal the agent never spent any time on — and an agent
+    // re-picking the same location looped one fake completion per minute.
+    else this.arrive(a)
   }
   private pickGoal(a: Agent) {
     const hour = this.hour
