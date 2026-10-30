@@ -151,7 +151,12 @@ export class SimEngine {
         a.energy = Math.max(0, a.energy - 0.4); a.hunger = Math.min(100, a.hunger + 0.7)
         if (a.mood < 40) a.mood = Math.min(100, a.mood + 0.2)
         const conv = this.conv.get(a.id)
-        if (conv && this.simMinutes >= conv.until) { this.conv.delete(a.id); if (a.state === 'Conversing') { a.state = 'Idle'; a.activity = 'Finished conversation' } }
+        // A Conversing agent with no conv entry is desynced — this happens
+        // after snapshot/restore, because the conv timer map is not part of
+        // the saved snapshot. Without this it stays Conversing forever:
+        // the decision branches below both skip Conversing agents, and no
+        // timer ever fires to release it.
+        if (a.state === 'Conversing' && (!conv || this.simMinutes >= conv.until)) { this.conv.delete(a.id); a.state = 'Idle'; a.activity = 'Finished conversation' }
         if (!a.path.length && a.state !== 'Conversing' && this.simMinutes >= a.activityUntil && this.simMinutes >= a.cooldownUntil) {
           if (a.activityUntil > 0 && a.state !== 'Idle') this.complete(a); else this.pickGoal(a)
         } else if (!a.path.length && a.state === 'Idle' && this.simMinutes >= a.cooldownUntil) this.pickGoal(a)

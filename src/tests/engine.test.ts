@@ -28,6 +28,13 @@ describe('engine', () => {
     expect(e.relevantMemories(a.id, b.id)[0].summary).toContain('Bob')
   })
   it('world snapshot validates with Zod', () => { const e = new SimEngine(3); expect(() => WorldSchema.parse(e.snapshot())).not.toThrow() })
+  it('restored Conversing agent is not stuck: the conv timer is not in the snapshot, so a missing entry must release it', () => {
+    const e = new SimEngine(11); const a = e.agents[0]
+    a.state = 'Conversing'; a.path = []; a.activityUntil = e.simMinutes + 40; a.cooldownUntil = 0
+    const e2 = new SimEngine(99); e2.restore(e.snapshot())
+    const acc = { v: 0 }; for (let i = 0; i < 200; i++) e2.step(1, acc)
+    expect(e2.agents[0].state).not.toBe('Conversing')
+  })
   it('add agent appears and ticks', () => {
     const e = new SimEngine(5); const before = e.agents.length
     e.addAgent({ name: 'Zoe Test', role: 'Tester', personality: { sociability: 50, energyNeed: 50, curiosity: 50, routine: 50 }, locationId: 'cafe', energy: 80, mood: 70 })
