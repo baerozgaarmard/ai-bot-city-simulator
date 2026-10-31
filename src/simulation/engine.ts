@@ -126,7 +126,12 @@ export class SimEngine {
     const loc = LOCATIONS.find(l => l.entrance.x === Math.round(a.pos.x) && l.entrance.y === Math.round(a.pos.y))
     this.completed++; a.recentActions.unshift(`${a.goal} at ${loc?.name ?? 'town'}`); a.recentActions = a.recentActions.slice(0, 5)
     if (a.state === 'Eating') { a.hunger = Math.max(0, a.hunger - 50); a.energy = Math.min(100, a.energy + 10) }
-    if (a.state === 'Resting' || a.state === 'Sleeping') a.energy = Math.min(100, a.energy + 40)
+    if (a.state === 'Resting') a.energy = Math.min(100, a.energy + 40)
+    // Sleeping must restore more than Resting: a sleep lasts 120 minutes
+    // (vs 60 for a rest) while energy drains 0.4/min, so the old shared
+    // +40 left an agent MORE tired after a full night's sleep (50 -> 42).
+    // +80 nets +32 over the night, the same recovery rate as a rest.
+    if (a.state === 'Sleeping') a.energy = Math.min(100, a.energy + 80)
     if (a.state === 'Working') a.confidence = Math.min(100, a.confidence + 5)
     this.log('GOAL', a, loc ?? null, `${a.name} completed ${a.goal.toLowerCase()}.`)
     a.cooldownUntil = this.simMinutes + 2; a.state = 'Idle'; a.activity = 'Deciding what to do next'; a.dest = null; a.path = []

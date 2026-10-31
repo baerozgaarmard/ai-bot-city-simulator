@@ -111,4 +111,17 @@ describe('engine', () => {
     ;(e as any).arrive(c)
     expect(c.state).toBe('Conversing'); expect(b.state).toBe('Conversing')
   })
+  it('a full night of sleep restores energy instead of draining it', () => {
+    // Regression: Sleeping shared Resting's +40 restore, but a sleep lasts
+    // 120 minutes (vs 60 for a rest) while energy drains 0.4/min, so an
+    // agent that slept the whole night woke up MORE tired (50 -> 42).
+    const e = new SimEngine(5); const a = e.agents[0]
+    a.state = 'Sleeping'; a.path = []; a.dest = null
+    a.activityUntil = e.simMinutes + 120; a.cooldownUntil = 0
+    a.energy = 50; a.hunger = 10
+    const acc = { v: 0 }
+    for (let i = 0; i < 130; i++) { e.step(1, acc); if ((a.state as string) === 'Idle') break }
+    expect(a.state).toBe('Idle')
+    expect(a.energy).toBeGreaterThan(50)
+  })
 })
