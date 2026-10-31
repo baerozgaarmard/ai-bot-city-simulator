@@ -182,7 +182,14 @@ export class PhaserScene extends Phaser.Scene {
     const ui = useUI.getState()
     engine.paused = ui.paused; engine.speed = ui.speed
     this.buildingLabels.forEach(l => l.setVisible(ui.showLocationLabels))
-    if (!ui.paused) engine.step((delta / 1000) * ui.speed, this.acc)
+    // Clamp the frame delta: Phaser's delta is wall time since the last
+    // frame, so returning to a hidden tab (or a long pause) would otherwise
+    // advance the whole absence in a single step — the clock jumping hours,
+    // activities completing en masse and energy/hunger draining, while
+    // movement advances only one tile per frame. At 100ms the sim
+    // effectively pauses while the tab is hidden; normal frames (~16ms)
+    // are unaffected.
+    if (!ui.paused) engine.step((Math.min(delta, 100) / 1000) * ui.speed, this.acc)
     for (const a of engine.agents) {
       this.ensureAgent(a.id)
       const o = this.agentObjs.get(a.id)!; const { sx, sy } = iso(a.pos.x, a.pos.y)
