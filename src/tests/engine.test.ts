@@ -111,6 +111,35 @@ describe('engine', () => {
     ;(e as any).arrive(c)
     expect(c.state).toBe('Conversing'); expect(b.state).toBe('Conversing')
   })
+  it('a finished conversation does not instantly re-form with the same partner at the same entrance', () => {
+    // Regression: release and re-pick happened inside one decision tick,
+    // so both ex-partners — still standing at the same entrance — could
+    // re-pick Socialize there, arrive instantly and pair again, chaining
+    // 10-minute conversations back-to-back with no visible break (one
+    // pair observed Conversing continuously for 31+ ticks). A pair that
+    // just split must not re-pair until the no-repeat window passes.
+    const e = new SimEngine(77); const park = LOCATIONS.find(l => l.id === 'park')!
+    const [a, b] = e.agents
+    const stage = () => {
+      for (const ag of [a, b]) {
+        ag.pos = { ...park.entrance }; ag.state = 'Socializing'; ag.path = []; ag.dest = null
+        ag.activityUntil = e.simMinutes + 40; ag.cooldownUntil = 0
+        ;(ag as any)._target = { loc: park, state: 'Socializing', activity: 'Socializing', durationMin: 40 }
+        ;(e as any).conv.delete(ag.id) // staged fresh, not mid-conversation with a passer-by
+      }
+    }
+    const acc = { v: 0 }
+    stage(); (e as any).arrive(a)
+    expect(a.state).toBe('Conversing'); expect(b.state).toBe('Conversing')
+    for (let i = 0; i < 11; i++) e.step(1, acc) // past the 10-minute timer
+    expect((e as any).conv.get(a.id)?.other).not.toBe(b.id)
+    expect((e as any).conv.get(b.id)?.other).not.toBe(a.id)
+    stage(); (e as any).arrive(a)
+    expect(b.state).toBe('Socializing') // blocked: just finished talking to a
+    for (let i = 0; i < 31; i++) e.step(1, acc) // past the 30-minute no-repeat window
+    stage(); (e as any).arrive(a)
+    expect(a.state).toBe('Conversing'); expect(b.state).toBe('Conversing')
+  })
   it('a full night of sleep restores energy instead of draining it', () => {
     // Regression: Sleeping shared Resting's +40 restore, but a sleep lasts
     // 120 minutes (vs 60 for a rest) while energy drains 0.4/min, so an

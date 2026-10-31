@@ -40,6 +40,15 @@ export class SimEngine {
   tick = 0; simMinutes = 8 * 60; seed: number; rng: () => number
   completed = 0; interactions = 0; paused = false; speed = 1
   private grid = walkableGrid(); private conv = new Map<string, { other: string; until: number }>()
+  private lastTalk = new Map<string, { partner: string; until: number }>()
+  // Who each agent last finished a conversation with, and until when a
+  // re-pair with that partner is blocked. Without this, release and
+  // re-pick happen inside one decision tick: both ex-partners are still
+  // standing at the same entrance, both re-pick Socialize there, arrive()
+  // runs instantly (already at the entrance) and pairs them again — so
+  // the same pair chains 10-minute conversations back-to-back with no
+  // visible break, looking like one endless conversation (31+ ticks
+  // observed for a 10-minute timer) instead of ever dispersing.
   constructor(seed = 20261028) {
     this.seed = seed; this.rng = mulberry32(seed); this.seedAgents()
     // Agents start with a goal, not Idle: without this the first screen
@@ -74,6 +83,10 @@ export class SimEngine {
     })
   }
   private locById(id: string) { return LOCATIONS.find(l => l.id === id)! }
+  private talkedRecently(aId: string, bId: string) {
+    const t = this.lastTalk.get(aId)
+    return !!t && t.partner === bId && this.simMinutes < t.until
+  }
   private setGoal(a: Agent, goal: string, loc: Location, state: AgentState, activity: string, durationMin: number) {
     const path = astar(this.grid, { x: Math.round(a.pos.x), y: Math.round(a.pos.y) }, loc.entrance)
     if (!path.length && !(Math.round(a.pos.x) === loc.entrance.x && Math.round(a.pos.y) === loc.entrance.y)) return
@@ -108,7 +121,7 @@ export class SimEngine {
     this.log('MOVEMENT', a, loc, `${a.name} arrived at ${loc.name} to ${a.goal.toLowerCase()}.`)
     // Proximity interaction: pair with another socializing/conversing agent at same entrance
     if (t.state === 'Socializing') {
-      const other = this.agents.find(o => o.id !== a.id && Math.round(o.pos.x) === loc.entrance.x && Math.round(o.pos.y) === loc.entrance.y && (o.state === 'Socializing' || o.state === 'Conversing') && !this.conv.has(o.id))
+      const other = this.agents.find(o => o.id !== a.id && Math.round(o.pos.x) === loc.entrance.x && Math.round(o.pos.y) === loc.entrance.y && (o.state === 'Socializing' || o.state === 'Conversing') && !this.conv.has(o.id) && !this.talkedRecently(a.id, o.id) && !this.talkedRecently(o.id, a.id))
       if (other) {
         const evId = nid('ev')
         this.conv.set(a.id, { other: other.id, until: this.simMinutes + 10 }); this.conv.set(other.id, { other: a.id, until: this.simMinutes + 10 })
@@ -167,7 +180,14 @@ export class SimEngine {
         // the saved snapshot. Without this it stays Conversing forever:
         // the decision branches below both skip Conversing agents, and no
         // timer ever fires to release it.
-        if (a.state === 'Conversing' && (!conv || this.simMinutes >= conv.until)) { this.conv.delete(a.id); a.state = 'Idle'; a.activity = 'Finished conversation' }
+        if (a.state === 'Conversing' && (!conv || this.simMinutes >= conv.until)) {
+          // Remember the ex-partner so the pair cannot instantly re-form:
+          // both are still standing at the same entrance, and without
+          // this the next pickGoal can re-pick Socialize there, arrive
+          // instantly and pair them again in the same tick they split.
+          if (conv) this.lastTalk.set(a.id, { partner: conv.other, until: this.simMinutes + 30 })
+          this.conv.delete(a.id); a.state = 'Idle'; a.activity = 'Finished conversation'
+        }
         if (!a.path.length && a.state !== 'Conversing' && this.simMinutes >= a.activityUntil && this.simMinutes >= a.cooldownUntil) {
           if (a.activityUntil > 0 && a.state !== 'Idle') this.complete(a); else this.pickGoal(a)
         } else if (!a.path.length && a.state === 'Idle' && this.simMinutes >= a.cooldownUntil) this.pickGoal(a)
@@ -209,6 +229,10 @@ export class SimEngine {
     // Clearing matches a fresh page load, where the guard releases
     // restored Conversing agents on the next tick.
     this.conv.clear()
+    // Same timeline argument as the conv map: lastTalk windows are on
+    // the live timeline, and loading an older save rewinds simMinutes,
+    // which would stretch a stale no-repeat window far past its intent.
+    this.lastTalk.clear()
   }
 }
 export const engine = new SimEngine()
