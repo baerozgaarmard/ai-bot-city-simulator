@@ -85,6 +85,20 @@ describe('engine', () => {
     e.addAgent({ name: 'Zoe Test', role: 'Tester', personality: { sociability: 50, energyNeed: 50, curiosity: 50, routine: 50 }, locationId: 'cafe', energy: 80, mood: 70 })
     expect(e.agents.length).toBe(before + 1)
   })
+  it('rapidly added agents get unique ids', () => {
+    // Regression: addAgent built ids from Date.now() alone, so agents
+    // added within the same millisecond shared one id — 200 rapid adds
+    // produced only 2 distinct ids. Everything downstream keys on id
+    // (the Phaser sprite map, selection, relationships), so the colliding
+    // agents merged into a single sprite and a single selectable row.
+    // Ids now go through the same incrementing counter as events/memories.
+    const e = new SimEngine(5); const ids: string[] = []
+    for (let i = 0; i < 200; i++) {
+      ids.push(e.addAgent({ name: `Probe${i}`, role: 'Tester', personality: { sociability: 50, energyNeed: 50, curiosity: 50, routine: 50 }, locationId: 'cafe', energy: 80, mood: 70 }).id)
+    }
+    expect(new Set(ids).size).toBe(200)
+    expect(new Set([...e.agents.map(a => a.id)]).size).toBe(e.agents.length)
+  })
   it('resetting a Conversing agent unwinds the conversation instead of leaving a stale conv entry', () => {
     // Regression: resetAgent left the agent's entry in the conv map, so
     // arrive() would never pick it as a conversation partner again (it
