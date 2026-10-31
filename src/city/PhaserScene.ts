@@ -190,6 +190,19 @@ export class PhaserScene extends Phaser.Scene {
     // effectively pauses while the tab is hidden; normal frames (~16ms)
     // are unaffected.
     if (!ui.paused) engine.step((Math.min(delta, 100) / 1000) * ui.speed, this.acc)
+    // Prune sprites of agents that no longer exist. Loading a save
+    // replaces engine.agents wholesale, so without this an agent added
+    // after that save was made kept a frozen ghost sprite, shadow, ring
+    // and name label on screen forever: the loop below only visits
+    // current agents, so nothing ever removed the orphan objects.
+    // (Also clears a stale selected path line for the same reason.)
+    const liveIds = new Set(engine.agents.map(a => a.id))
+    for (const [id, o] of this.agentObjs) {
+      if (liveIds.has(id)) continue
+      o.sprite.destroy(); o.shadow.destroy(); o.ring.destroy(); o.label.destroy()
+      this.agentObjs.delete(id)
+      if (ui.selectedId === id) this.pathG?.clear()
+    }
     for (const a of engine.agents) {
       this.ensureAgent(a.id)
       const o = this.agentObjs.get(a.id)!; const { sx, sy } = iso(a.pos.x, a.pos.y)
