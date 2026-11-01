@@ -3,6 +3,8 @@ import { astar } from '../simulation/pathfinding'
 import { walkableGrid, LOCATIONS } from '../simulation/map'
 import { SimEngine } from '../simulation/engine'
 import { WorldSchema } from '../persistence/db'
+import { engine } from '../simulation/engine'
+import { useUI, selectedAgent } from '../stores/store'
 
 describe('pathfinding', () => {
   it('finds a path that never crosses building tiles', () => {
@@ -210,6 +212,25 @@ describe('engine', () => {
     const byAgent = new Map<string, typeof episodes>()
     for (const ep of episodes) { const arr = byAgent.get(ep.agent) ?? []; arr.push(ep); byAgent.set(ep.agent, arr) }
     for (const arr of byAgent.values()) for (let k = 1; k < arr.length; k++) expect(arr[k].start - arr[k - 1].end).toBeGreaterThanOrEqual(3)
+  })
+  it('a selection naming an agent that no longer exists shows nothing, not the first agent', () => {
+    // Regression: selectedAgent() fell back to agents[0] whenever the
+    // selected id matched nothing. Loading a save replaces engine.agents
+    // wholesale, so an agent selected before the load may no longer
+    // exist — and the inspector then showed a different agent's details
+    // while the registry highlighted no row. A stale selection must
+    // show nothing; no selection at all still shows the first agent.
+    const ui = useUI.getState()
+    try {
+      ui.select('agent-that-does-not-exist')
+      expect(selectedAgent()).toBeNull()
+      ui.select(engine.agents[0].id)
+      expect(selectedAgent()?.id).toBe(engine.agents[0].id)
+      ui.select(null)
+      expect(selectedAgent()?.id).toBe(engine.agents[0].id)
+    } finally {
+      ui.select(null)
+    }
   })
   it('a full night of sleep restores energy instead of draining it', () => {
     // Regression: Sleeping shared Resting's +40 restore, but a sleep lasts

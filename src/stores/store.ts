@@ -16,4 +16,14 @@ export const useUI = create<UIState>((set) => ({
   search: '', roleFilter: 'All', stateFilter: 'All', consoleSearch: '', consoleCategory: 'All', memorySearch: '',
   set: (p) => set(p), sync: () => set({ tick: engine.tick }), select: (id) => set({ selectedId: id }),
 }))
-export function selectedAgent(): Agent | null { const id = useUI.getState().selectedId; return engine.agents.find(a => a.id === id) ?? engine.agents[0] ?? null }
+export function selectedAgent(): Agent | null {
+  const id = useUI.getState().selectedId
+  // No selection still shows the first agent (the initial view). But a
+  // selection naming no live agent is stale, not a request for the first
+  // agent: loading a save replaces engine.agents wholesale, so an agent
+  // selected before the load may no longer exist. Falling back to
+  // agents[0] there showed the inspector for an agent the user never
+  // picked, while the registry highlighted no row at all.
+  if (!id) return engine.agents[0] ?? null
+  return engine.agents.find(a => a.id === id) ?? null
+}
