@@ -254,7 +254,12 @@ export function buildAllTextures(scene: Phaser.Scene): string[] {
   if (!scene.textures.exists('shadow')) {
     const g = scene.add.graphics(); g.fillStyle(0x000000, 0.28); g.fillEllipse(16, 6, 32, 12); g.generateTexture('shadow', 32, 12); g.destroy()
   }
-  const missing = manifestKeys().filter(k => k !== 'character' && !scene.textures.exists(k))
+  // v3 keys are loader assets, not generated here: a missing/corrupt v3
+  // file must fall back to the procedural building texture (buildingImg
+  // checks textures.exists), not throw and blank the whole city. Before
+  // this exclusion, one bad v3 PNG failed this check in create() before
+  // any building was drawn, despite the documented fallback.
+  const missing = manifestKeys().filter(k => k !== 'character' && !k.startsWith('v3-building-') && !scene.textures.exists(k))
   if (missing.length) throw new Error(`Missing pixel-art textures: ${missing.join(', ')}`)
   return manifestKeys()
 }

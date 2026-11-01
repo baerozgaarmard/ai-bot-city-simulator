@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { ASSET_MANIFEST, manifestKeys } from '../city/textures'
+import { ASSET_MANIFEST, manifestKeys, buildAllTextures } from '../city/textures'
 import { BUILDING_STYLES, spritePixels } from '../city/sprites'
 import { SimEngine } from '../simulation/engine'
 
@@ -40,6 +40,38 @@ describe('asset manifest', () => {
       expect(buf[25]).toBe(6) // RGBA colour type: real transparency, not white-keyed at runtime
       expect(ASSET_MANIFEST.find(a => a.key === `v3-building-${id}`)?.w).toBe(w)
     }
+  })
+})
+describe('texture validation vs v3 fallback', () => {
+  // Minimal Phaser.Scene stand-in: only the texture/add surface
+  // buildAllTextures touches. Generated keys register on generateTexture;
+  // v3 keys are never generated here (they come from the loader).
+  const fakeScene = (failKeys: string[] = []) => {
+    const generated = new Set<string>(); const fail = new Set(failKeys)
+    const graphics = () => ({
+      fillStyle: () => undefined, fillRect: () => undefined, fillEllipse: () => undefined,
+      generateTexture: (key: string) => { if (!fail.has(key)) generated.add(key) },
+      destroy: () => undefined,
+    })
+    return { generated, scene: { textures: { exists: (k: string) => generated.has(k) }, add: { graphics } } as any }
+  }
+  it('a missing v3 building file does not fail texture validation (procedural fallback must survive)', () => {
+    // Regression: buildAllTextures validated every manifest key, v3
+    // keys included, but it never generates v3 textures — they arrive
+    // via preload. A single missing/corrupt v3 PNG therefore threw in
+    // PhaserScene.create() before any building was drawn, blanking the
+    // whole city, even though buildingImg() is written to fall back to
+    // the procedural texture when the v3 texture is absent.
+    const { generated, scene } = fakeScene()
+    expect(() => buildAllTextures(scene)).not.toThrow()
+    expect(generated.has('tile-grass')).toBe(true)
+    expect(generated.has('building-cafe')).toBe(true)
+    expect(generated.has('shadow')).toBe(true)
+    expect(generated.has('v3-building-cafe')).toBe(false)
+  })
+  it('a genuinely missing generated texture still fails validation', () => {
+    const { scene } = fakeScene(['tile-grass'])
+    expect(() => buildAllTextures(scene)).toThrow(/tile-grass/)
   })
 })
 describe('simulation liveness (idle-bug regression)', () => {
