@@ -154,6 +154,31 @@ describe('engine', () => {
     stage(); (e as any).arrive(a)
     expect(a.state).toBe('Conversing'); expect(b.state).toBe('Conversing')
   })
+  it('conversations do not chain into one unbroken Conversing stretch with different partners', () => {
+    // Regression: the 30-minute no-repeat window only blocks the SAME
+    // partner, so a released agent instantly re-picked Socialize at the
+    // same entrance, arrived instantly and paired with the NEXT agent
+    // standing there — a 29-minute unbroken "Conversing" stretch made of
+    // three chained 10-minute conversations (seed 1, Tara at the park).
+    // After a conversation ends the agent must show a visible Idle break
+    // before it can converse again, so no single episode exceeds one
+    // conversation length and no two episodes of one agent touch.
+    const e = new SimEngine(1); const acc = { v: 0 }
+    const open = new Map<string, number>()
+    const episodes: Array<{ agent: string; start: number; end: number }> = []
+    for (let i = 0; i < 2000; i++) {
+      e.step(1, acc)
+      for (const a of e.agents) {
+        if (a.state === 'Conversing' && !open.has(a.id)) open.set(a.id, e.simMinutes)
+        if (a.state !== 'Conversing' && open.has(a.id)) { episodes.push({ agent: a.id, start: open.get(a.id)!, end: e.simMinutes }); open.delete(a.id) }
+      }
+    }
+    expect(episodes.length).toBeGreaterThan(0)
+    for (const ep of episodes) expect(ep.end - ep.start).toBeLessThanOrEqual(12)
+    const byAgent = new Map<string, typeof episodes>()
+    for (const ep of episodes) { const arr = byAgent.get(ep.agent) ?? []; arr.push(ep); byAgent.set(ep.agent, arr) }
+    for (const arr of byAgent.values()) for (let k = 1; k < arr.length; k++) expect(arr[k].start - arr[k - 1].end).toBeGreaterThanOrEqual(3)
+  })
   it('a full night of sleep restores energy instead of draining it', () => {
     // Regression: Sleeping shared Resting's +40 restore, but a sleep lasts
     // 120 minutes (vs 60 for a rest) while energy drains 0.4/min, so an

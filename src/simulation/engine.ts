@@ -186,7 +186,17 @@ export class SimEngine {
           // this the next pickGoal can re-pick Socialize there, arrive
           // instantly and pair them again in the same tick they split.
           if (conv) this.lastTalk.set(a.id, { partner: conv.other, until: this.simMinutes + 30 })
-          this.conv.delete(a.id); a.state = 'Idle'; a.activity = 'Finished conversation'
+          // Visible break after a conversation: without a cooldown the
+          // released agent instantly re-picks Socialize at the same
+          // entrance, arrives instantly (already there) and pairs with
+          // the next agent standing there — chaining distinct 10-minute
+          // conversations into one unbroken 20-30 minute "Conversing"
+          // stretch with no Idle gap. The no-repeat window above only
+          // blocks the same partner, so it does not stop this. A short
+          // cooldown makes the agent stand Idle ("Finished
+          // conversation") before its next goal, so each conversation
+          // reads as a separate event.
+          this.conv.delete(a.id); a.state = 'Idle'; a.activity = 'Finished conversation'; a.cooldownUntil = this.simMinutes + 5
         }
         if (!a.path.length && a.state !== 'Conversing' && this.simMinutes >= a.activityUntil && this.simMinutes >= a.cooldownUntil) {
           if (a.activityUntil > 0 && a.state !== 'Idle') this.complete(a); else this.pickGoal(a)
