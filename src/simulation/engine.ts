@@ -222,7 +222,12 @@ export class SimEngine {
       const other = this.agents.find(x => x.id === conv.other)
       if (other && this.conv.get(other.id)?.other === id) {
         this.conv.delete(other.id)
-        if (other.state === 'Conversing') { other.state = 'Idle'; other.activity = 'Finished conversation' }
+        // Same visible break as a natural conversation release: without
+        // a cooldown the partner — still standing at the same entrance —
+        // instantly re-picks Socialize there on the next tick, arrives
+        // instantly and pairs with the next agent standing there, so a
+        // reset chains straight into a new conversation with no Idle gap.
+        if (other.state === 'Conversing') { other.state = 'Idle'; other.activity = 'Finished conversation'; other.cooldownUntil = this.simMinutes + 5 }
       }
     }
     a.state = 'Idle'; a.path = []; a.dest = null; a.energy = 80; a.hunger = 20; a.mood = 70; a.activity = 'Reset'; a.goal = 'Settle in'

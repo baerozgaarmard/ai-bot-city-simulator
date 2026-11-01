@@ -125,6 +125,38 @@ describe('engine', () => {
     ;(e as any).arrive(c)
     expect(c.state).toBe('Conversing'); expect(b.state).toBe('Conversing')
   })
+  it('resetting a Conversing agent gives its partner the same Idle break as a natural release', () => {
+    // Regression: resetAgent released the partner to Idle with no
+    // cooldown, while a natural release sets a 5-minute cooldown. The
+    // partner — still standing at the same entrance — instantly re-picked
+    // Socialize there on the next tick, arrived instantly and paired
+    // with the next agent standing there, so a reset chained straight
+    // into a new conversation with no visible Idle gap (observed in 6/8
+    // staged trials). The partner must now stand Idle for the cooldown
+    // before it can converse again, matching a natural release.
+    const e = new SimEngine(77); const park = LOCATIONS.find(l => l.id === 'park')!
+    const [a, b, c] = e.agents
+    for (const ag of [a, b]) {
+      ag.pos = { ...park.entrance }; ag.state = 'Socializing'; ag.path = []; ag.dest = null
+      ag.activityUntil = e.simMinutes + 40; ag.cooldownUntil = 0
+      ;(ag as any)._target = { loc: park, state: 'Socializing', activity: 'Socializing', durationMin: 40 }
+    }
+    ;(e as any).arrive(a)
+    expect(a.state).toBe('Conversing'); expect(b.state).toBe('Conversing')
+    // A third agent socializing at the same entrance: the instant
+    // re-pair candidate in the buggy version.
+    c.pos = { ...park.entrance }; c.state = 'Socializing'; c.path = []; c.dest = null
+    c.activityUntil = e.simMinutes + 40; c.cooldownUntil = 0
+    ;(c as any)._target = { loc: park, state: 'Socializing', activity: 'Socializing', durationMin: 40 }
+    // Make the partner strongly prefer Socialize, so a missing cooldown
+    // would deterministically re-pair it instead of picking another goal.
+    a.energy = 100; a.hunger = 0; a.mood = 80
+    a.personality = { sociability: 100, energyNeed: 50, curiosity: 0, routine: 0 }
+    e.resetAgent(b.id)
+    expect(a.state).toBe('Idle')
+    const acc = { v: 0 }
+    for (let i = 0; i < 4; i++) { e.step(1, acc); expect(a.state).toBe('Idle'); expect(a.state).not.toBe('Conversing') }
+  })
   it('a finished conversation does not instantly re-form with the same partner at the same entrance', () => {
     // Regression: release and re-pick happened inside one decision tick,
     // so both ex-partners — still standing at the same entrance — could
