@@ -159,6 +159,26 @@ describe('engine', () => {
     const acc = { v: 0 }
     for (let i = 0; i < 4; i++) { e.step(1, acc); expect(a.state).toBe('Idle'); expect(a.state).not.toBe('Conversing') }
   })
+  it('resetting a Conversing agent does not let the pair instantly re-form either', () => {
+    // Regression: resetAgent unwound the conversation but never recorded
+    // the no-repeat window a natural release sets, so the ex-partners
+    // could re-pair at the same entrance as soon as the partner's
+    // 5-minute cooldown passed — staged here, the pair re-formed on the
+    // very next arrive(), while a naturally finished pair is blocked
+    // for 30 minutes. A reset must carry the same window.
+    const e = new SimEngine(77); const park = LOCATIONS.find(l => l.id === 'park')!
+    const [a, b] = e.agents
+    const stage = (ag: any) => {
+      ag.pos = { ...park.entrance }; ag.state = 'Socializing'; ag.path = []; ag.dest = null
+      ag.activityUntil = e.simMinutes + 40; ag.cooldownUntil = 0
+      ag._target = { loc: park, state: 'Socializing', activity: 'Socializing', durationMin: 40 }
+    }
+    stage(a); stage(b); (e as any).arrive(a)
+    expect(a.state).toBe('Conversing'); expect(b.state).toBe('Conversing')
+    e.resetAgent(b.id)
+    stage(a); stage(b); (e as any).arrive(a)
+    expect(a.state).toBe('Socializing'); expect(b.state).toBe('Socializing')
+  })
   it('a finished conversation does not instantly re-form with the same partner at the same entrance', () => {
     // Regression: release and re-pick happened inside one decision tick,
     // so both ex-partners — still standing at the same entrance — could

@@ -218,6 +218,13 @@ export class SimEngine {
     // partner now instead of leaving it Conversing until its timer fires.
     const conv = this.conv.get(id)
     if (conv) {
+      // Same no-repeat window as a natural release: without this the
+      // ex-partners could re-pair at the same entrance as soon as the
+      // partner's 5-minute cooldown passed, instead of waiting 30
+      // minutes — so a reset pair re-formed almost immediately, while a
+      // naturally finished pair could not.
+      this.lastTalk.set(id, { partner: conv.other, until: this.simMinutes + 30 })
+      this.lastTalk.set(conv.other, { partner: id, until: this.simMinutes + 30 })
       this.conv.delete(id)
       const other = this.agents.find(x => x.id === conv.other)
       if (other && this.conv.get(other.id)?.other === id) {
