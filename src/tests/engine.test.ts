@@ -82,6 +82,37 @@ describe('engine', () => {
     const acc = { v: 0 }; for (let i = 0; i < 5; i++) e.step(1, acc)
     expect(e.agents[0].state).not.toBe('Conversing')
   })
+  it('a restored Conversing agent is not re-paired by a passer-by before the release guard runs', () => {
+    // Regression: restore() clears the conv map but leaves agents flagged
+    // Conversing until the next decision tick's guard releases them. In
+    // that window the movement phase runs first, and arrive() used to
+    // accept Conversing agents as partners when they held no conv entry
+    // — so a third agent arriving at the same entrance re-paired with the
+    // desynced agent, silently re-starting its 10-minute timer
+    // mid-conversation (a 17-minute Conversing streak observed in a
+    // 30k-tick stress run) instead of letting the guard release it to
+    // Idle. Only Socializing agents are now eligible partners.
+    const e = new SimEngine(77); const park = LOCATIONS.find(l => l.id === 'park')!
+    const [a, b] = e.agents
+    for (const ag of [a, b]) {
+      ag.pos = { ...park.entrance }; ag.state = 'Socializing'; ag.path = []; ag.dest = null
+      ag.activityUntil = e.simMinutes + 40; ag.cooldownUntil = 0
+      ;(ag as any)._target = { loc: park, state: 'Socializing', activity: 'Socializing', durationMin: 40 }
+    }
+    ;(e as any).arrive(a)
+    expect(a.state).toBe('Conversing'); expect(b.state).toBe('Conversing')
+    e.restore(e.snapshot())
+    const [a2, b2, c] = e.agents
+    expect((e as any).conv.size).toBe(0)
+    expect(a2.state).toBe('Conversing'); expect(b2.state).toBe('Conversing')
+    c.pos = { ...park.entrance }; c.state = 'Socializing'; c.path = []; c.dest = null
+    c.activityUntil = e.simMinutes + 40; c.cooldownUntil = 0
+    ;(c as any)._target = { loc: park, state: 'Socializing', activity: 'Socializing', durationMin: 40 }
+    ;(e as any).arrive(c)
+    expect(c.state).toBe('Socializing'); expect((e as any).conv.size).toBe(0)
+    const acc = { v: 0 }; e.step(1, acc)
+    expect(a2.state).toBe('Idle'); expect(b2.state).toBe('Idle')
+  })
   it('add agent appears and ticks', () => {
     const e = new SimEngine(5); const before = e.agents.length
     e.addAgent({ name: 'Zoe Test', role: 'Tester', personality: { sociability: 50, energyNeed: 50, curiosity: 50, routine: 50 }, locationId: 'cafe', energy: 80, mood: 70 })

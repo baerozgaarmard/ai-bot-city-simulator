@@ -131,9 +131,19 @@ export class SimEngine {
     const loc: Location = t.loc
     a.state = t.state; a.activity = t.activity; a.activityUntil = this.simMinutes + t.durationMin; a.thought = `${t.activity} at ${loc.name}.`
     this.log('MOVEMENT', a, loc, `${a.name} arrived at ${loc.name} to ${a.goal.toLowerCase()}.`)
-    // Proximity interaction: pair with another socializing/conversing agent at same entrance
+    // Proximity interaction: pair with another socializing agent at same entrance
     if (t.state === 'Socializing') {
-      const other = this.agents.find(o => o.id !== a.id && Math.round(o.pos.x) === loc.entrance.x && Math.round(o.pos.y) === loc.entrance.y && (o.state === 'Socializing' || o.state === 'Conversing') && !this.conv.has(o.id) && !this.talkedRecently(a.id, o.id) && !this.talkedRecently(o.id, a.id))
+      // Only Socializing agents are eligible partners. A Conversing agent
+      // always holds a conv entry in live operation, so the old
+      // Conversing branch could only match a desynced one — e.g. after
+      // restore() cleared the conv map, when the agent is still flagged
+      // Conversing until the next decision tick's guard releases it.
+      // Pairing it here re-started its timer mid-conversation in the
+      // movement phase, before that guard could run: a 10-minute
+      // conversation stretched to a 17-minute Conversing streak, with a
+      // new partner and no Idle break. A Conversing agent is already
+      // talking; it must be released first, never re-paired.
+      const other = this.agents.find(o => o.id !== a.id && Math.round(o.pos.x) === loc.entrance.x && Math.round(o.pos.y) === loc.entrance.y && o.state === 'Socializing' && !this.conv.has(o.id) && !this.talkedRecently(a.id, o.id) && !this.talkedRecently(o.id, a.id))
       if (other) {
         const evId = nid('ev')
         this.conv.set(a.id, { other: other.id, until: this.simMinutes + 10 }); this.conv.set(other.id, { other: a.id, until: this.simMinutes + 10 })
