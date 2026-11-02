@@ -208,6 +208,40 @@ describe('engine', () => {
     stage(); (e as any).arrive(a)
     expect(a.state).toBe('Conversing'); expect(b.state).toBe('Conversing')
   })
+  it('an intervening conversation does not erase the no-repeat window against an earlier partner', () => {
+    // Regression: lastTalk kept only each agent's most recent ex-partner,
+    // so one intervening conversation with anyone else silently erased
+    // the 30-minute window against the previous partner — a pair that
+    // just split could re-form inside the window as soon as both had
+    // talked to someone else. The window must be kept per partner.
+    const e = new SimEngine(77); const park = LOCATIONS.find(l => l.id === 'park')!
+    const [a, b, c, d] = e.agents
+    // Only a and b live at first: other agents roaming free form their
+    // own conversations at the park entrance and steal staged partners.
+    for (const ag of e.agents) if (![a, b].includes(ag)) { ag.paused = true; ag.pos = { x: 0, y: 0 }; ag.state = 'Idle'; ag.path = [] }
+    const stage = (ag: any) => {
+      ag.pos = { ...park.entrance }; ag.state = 'Socializing'; ag.path = []; ag.dest = null
+      ag.activityUntil = e.simMinutes + 40; ag.cooldownUntil = 0
+      ag._target = { loc: park, state: 'Socializing', activity: 'Socializing', durationMin: 40 }
+    }
+    const acc = { v: 0 }
+    const step = (n: number) => { for (let i = 0; i < n; i++) e.step(1, acc) }
+    stage(a); stage(b); (e as any).arrive(a)
+    expect((e as any).conv.get(a.id)?.other).toBe(b.id)
+    step(11) // past the 10-minute timer: a and b split
+    expect(a.state).toBe('Idle'); expect(b.state).toBe('Idle')
+    const splitAt = e.simMinutes
+    c.paused = false; d.paused = false
+    stage(a); stage(c); (e as any).arrive(a)
+    expect((e as any).conv.get(a.id)?.other).toBe(c.id)
+    stage(b); stage(d); (e as any).arrive(b)
+    expect((e as any).conv.get(b.id)?.other).toBe(d.id)
+    step(11) // both intervening conversations end
+    expect(e.simMinutes - splitAt).toBeLessThan(30)
+    stage(a); stage(b); (e as any).arrive(a)
+    expect(a.state).toBe('Socializing') // still blocked: inside a-b's window
+    expect(b.state).toBe('Socializing')
+  })
   it('conversations do not chain into one unbroken Conversing stretch with different partners', () => {
     // Regression: the 30-minute no-repeat window only blocks the SAME
     // partner, so a released agent instantly re-picked Socialize at the

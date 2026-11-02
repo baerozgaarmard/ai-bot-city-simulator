@@ -40,7 +40,15 @@ export class SimEngine {
   tick = 0; simMinutes = 8 * 60; seed: number; rng: () => number
   completed = 0; interactions = 0; paused = false; speed = 1
   private grid = walkableGrid(); private conv = new Map<string, { other: string; until: number }>()
-  private lastTalk = new Map<string, { partner: string; until: number }>()
+  private lastTalk = new Map<string, Map<string, number>>()
+  // One no-repeat expiry per (agent, ex-partner) pair, not one per
+  // agent: the old single-slot map kept only each agent's MOST RECENT
+  // ex-partner, so one intervening conversation with anyone else
+  // silently erased the 30-minute window against the previous partner —
+  // a pair that just split could re-form inside the window as soon as
+  // both had talked to someone else. Entries are keyed by partner, so
+  // a map holds at most one entry per other agent and never grows
+  // unboundedly; expired entries simply stop blocking.
   // Who each agent last finished a conversation with, and until when a
   // re-pair with that partner is blocked. Without this, release and
   // re-pick happen inside one decision tick: both ex-partners are still
@@ -84,8 +92,12 @@ export class SimEngine {
   }
   private locById(id: string) { return LOCATIONS.find(l => l.id === id)! }
   private talkedRecently(aId: string, bId: string) {
-    const t = this.lastTalk.get(aId)
-    return !!t && t.partner === bId && this.simMinutes < t.until
+    const until = this.lastTalk.get(aId)?.get(bId)
+    return until !== undefined && this.simMinutes < until
+  }
+  private blockRePair(aId: string, bId: string, until: number) {
+    let m = this.lastTalk.get(aId); if (!m) { m = new Map(); this.lastTalk.set(aId, m) }
+    m.set(bId, until)
   }
   private setGoal(a: Agent, goal: string, loc: Location, state: AgentState, activity: string, durationMin: number) {
     const path = astar(this.grid, { x: Math.round(a.pos.x), y: Math.round(a.pos.y) }, loc.entrance)
@@ -185,7 +197,7 @@ export class SimEngine {
           // both are still standing at the same entrance, and without
           // this the next pickGoal can re-pick Socialize there, arrive
           // instantly and pair them again in the same tick they split.
-          if (conv) this.lastTalk.set(a.id, { partner: conv.other, until: this.simMinutes + 30 })
+          if (conv) this.blockRePair(a.id, conv.other, this.simMinutes + 30)
           // Visible break after a conversation: without a cooldown the
           // released agent instantly re-picks Socialize at the same
           // entrance, arrives instantly (already there) and pairs with
@@ -223,8 +235,8 @@ export class SimEngine {
       // partner's 5-minute cooldown passed, instead of waiting 30
       // minutes — so a reset pair re-formed almost immediately, while a
       // naturally finished pair could not.
-      this.lastTalk.set(id, { partner: conv.other, until: this.simMinutes + 30 })
-      this.lastTalk.set(conv.other, { partner: id, until: this.simMinutes + 30 })
+      this.blockRePair(id, conv.other, this.simMinutes + 30)
+      this.blockRePair(conv.other, id, this.simMinutes + 30)
       this.conv.delete(id)
       const other = this.agents.find(x => x.id === conv.other)
       if (other && this.conv.get(other.id)?.other === id) {
