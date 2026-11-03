@@ -231,6 +231,17 @@ export class SimEngine {
     const a: Agent = { id: nid('agent'), name: input.name, role: input.role, color: pick(this.rng, COLORS), personality: input.personality, pos: { ...loc.entrance }, dest: null, path: [], state: 'Idle', activity: 'Arriving', goal: 'Settle in', intention: 'Settle in', thought: 'New in Smallville.', energy: input.energy, hunger: 20, mood: input.mood, sociability: input.personality.sociability, confidence: 60, home: 'residential', workplace: 'office', paused: false, activityUntil: 0, cooldownUntil: 0, relationships: {}, recentActions: [] }
     this.agents.push(a); this.log('SYSTEM', a, loc, `${a.name} joined Smallville as ${a.role}.`); return a
   }
+  setSociability(id: string, value: number) {
+    const a = this.agents.find(x => x.id === id); if (!a) return
+    // The inspector slider edits personality.sociability (the value
+    // pickGoal reads), but the stats list shows the top-level sociability
+    // field, which was only set at spawn — so moving the slider changed
+    // behaviour while the displayed stat stayed frozen at the seed value,
+    // and the panel showed two different "Sociability" numbers. Keep
+    // both copies in sync; personality remains the authoritative one.
+    const v = Math.max(0, Math.min(100, value))
+    a.personality.sociability = v; a.sociability = v
+  }
   resetAgent(id: string) {
     const a = this.agents.find(x => x.id === id); if (!a) return
     // Unwind any conversation: without this the agent's conv entry stayed

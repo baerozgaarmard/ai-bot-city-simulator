@@ -30,6 +30,21 @@ describe('engine', () => {
     expect(e.relevantMemories(a.id, b.id)[0].summary).toContain('Bob')
   })
   it('world snapshot validates with Zod', () => { const e = new SimEngine(3); expect(() => WorldSchema.parse(e.snapshot())).not.toThrow() })
+  it('setting sociability keeps the displayed stat in sync with the goal-choice value', () => {
+    // Regression: the inspector slider edited personality.sociability
+    // (the value pickGoal reads) while the stats list showed the
+    // top-level sociability field, set only at spawn — so moving the
+    // slider changed behaviour while the displayed stat stayed frozen
+    // at the seed value, and the panel showed two different
+    // "Sociability" numbers for one agent.
+    const e = new SimEngine(3); const a = e.agents[0]
+    expect(a.sociability).toBe(a.personality.sociability)
+    e.setSociability(a.id, 95)
+    expect(a.personality.sociability).toBe(95); expect(a.sociability).toBe(95)
+    e.setSociability(a.id, 150); expect(a.sociability).toBe(100)
+    e.setSociability(a.id, -20); expect(a.sociability).toBe(0)
+    e.setSociability('no-such-agent', 50) // no throw
+  })
   it('goal at the agent\'s current entrance sets activityUntil instead of instantly completing', () => {
     // Regression: setGoal used to set the target state directly when the
     // path was empty (already at the entrance) without setting

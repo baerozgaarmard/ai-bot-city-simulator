@@ -129,7 +129,7 @@ export default function App() {
             {engine.memories.filter(m => m.ownerId === sel.id).slice(0, 5).map(m => <p key={m.id} className="text-sm py-1 border-b border-gray-800">{m.summary}</p>)}
             <h3 className="font-semibold mt-4">Recent Actions</h3>
             {sel.recentActions.map((a, i) => <p key={i} className="text-sm">{a}</p>)}
-            <label className="block mt-4 text-sm">Sociability: {sel.personality.sociability}<input type="range" min={0} max={100} value={sel.personality.sociability} onChange={e => { sel.personality.sociability = Number(e.target.value); ui.sync() }} className="w-full" /></label>
+            <label className="block mt-4 text-sm">Sociability: {sel.personality.sociability}<input type="range" min={0} max={100} value={sel.personality.sociability} onChange={e => { engine.setSociability(sel.id, Number(e.target.value)); ui.sync() }} className="w-full" /></label>
           </aside>
         )}
         {ui.rightCollapsed && sel && <button className="px-2 border-l border-gray-800 text-xs min-h-[44px]" aria-label="Show agent inspector panel" onClick={() => ui.set({ rightCollapsed: false })}>◀ Inspector</button>}
