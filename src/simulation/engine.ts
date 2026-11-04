@@ -271,6 +271,14 @@ export class SimEngine {
       }
     }
     a.state = 'Idle'; a.path = []; a.dest = null; a.energy = 80; a.hunger = 20; a.mood = 70; a.activity = 'Reset'; a.goal = 'Settle in'
+    // A reset must actually restart the agent: a paused agent that is
+    // reset kept paused=true, so step() skipped it forever — frozen on
+    // Idle/"Reset" with no goal, and nothing ever unpaused it. Likewise
+    // a stale activityUntil/cooldownUntil from the pre-reset goal could
+    // leave it standing Idle past the reset, and a stale _target could
+    // be re-entered by the next arrival. Clear all four so the next
+    // decision tick picks a fresh goal.
+    a.paused = false; a.activityUntil = 0; a.cooldownUntil = 0; (a as any)._target = undefined
   }
   snapshot() { return JSON.parse(JSON.stringify({ agents: this.agents, memories: this.memories, events: this.events.slice(0, 200), tick: this.tick, simMinutes: this.simMinutes, seed: this.seed, completed: this.completed, interactions: this.interactions })) }
   restore(s: any) {

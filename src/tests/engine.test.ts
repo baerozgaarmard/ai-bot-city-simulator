@@ -345,4 +345,17 @@ describe('engine', () => {
     expect(a.state).toBe('Idle')
     expect(a.energy).toBeGreaterThan(50)
   })
+  it('resetting a paused agent unpauses it instead of freezing it on Reset', () => {
+    // Regression: resetAgent left paused=true untouched, so step() kept
+    // skipping the agent forever — it sat on Idle/"Reset" with no goal
+    // and nothing ever resumed it. A reset must restart the agent.
+    const e = new SimEngine(7); const a = e.agents[0]
+    a.paused = true
+    e.resetAgent(a.id)
+    expect(a.paused).toBe(false)
+    const acc = { v: 0 }
+    for (let i = 0; i < 5; i++) e.step(1, acc)
+    expect(a.state).not.toBe('Idle')
+    expect(a.activity).not.toBe('Reset')
+  })
 })
