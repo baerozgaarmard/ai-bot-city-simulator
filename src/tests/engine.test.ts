@@ -266,6 +266,41 @@ describe('engine', () => {
     stage(); (e as any).arrive(a)
     expect(a.state).toBe('Conversing'); expect(b.state).toBe('Conversing')
   })
+  it('loading a save keeps the no-repeat window for a pair mid-conversation when saved', () => {
+    // Regression: restore() cleared the conv map and the lastTalk
+    // windows, so a pair mid-conversation when saved was released by
+    // the guard with no 30-minute no-repeat block — after the 5-minute
+    // cooldown both could re-pick Socialize at the same entrance and
+    // pair again, looking like one endless conversation. A load now
+    // treats the cut-short conversation as finished: the pair cannot
+    // re-form for 30 minutes.
+    const e = new SimEngine(77); const park = LOCATIONS.find(l => l.id === 'park')!
+    const [a, b] = e.agents
+    const stage = (eng: SimEngine, ag: any) => {
+      ag.pos = { ...park.entrance }; ag.state = 'Socializing'; ag.path = []; ag.dest = null
+      ag.activityUntil = eng.simMinutes + 40; ag.cooldownUntil = 0
+      ag._target = { loc: park, state: 'Socializing', activity: 'Socializing', durationMin: 40 }
+    }
+    stage(e, a); stage(e, b); (e as any).arrive(a)
+    expect(a.state).toBe('Conversing'); expect(b.state).toBe('Conversing')
+    // The pair and the window must survive the save/load round-trip.
+    expect(() => WorldSchema.parse(e.snapshot())).not.toThrow()
+    expect(WorldSchema.parse(e.snapshot()).convPairs?.length).toBe(1)
+    const e2 = new SimEngine(99)
+    e2.restore(e.snapshot())
+    const [a2, b2] = e2.agents
+    expect(a2.state).toBe('Conversing')
+    const acc = { v: 0 }; e2.step(1, acc) // guard releases the cut-short pair
+    expect(a2.state).toBe('Idle'); expect(b2.state).toBe('Idle')
+    stage(e2, a2); stage(e2, b2); (e2 as any).arrive(a2)
+    expect(a2.state).toBe('Socializing'); expect(b2.state).toBe('Socializing')
+    expect((e2 as any).conv.size).toBe(0)
+    // Once the 30-minute window passes, the pair may talk again.
+    e2.agents = e2.agents.slice(0, 2) // only the pair left, so no passer-by can pair mid-wait
+    for (let i = 0; i < 31; i++) e2.step(1, acc)
+    stage(e2, a2); stage(e2, b2); (e2 as any).arrive(a2)
+    expect(a2.state).toBe('Conversing'); expect(b2.state).toBe('Conversing')
+  })
   it('an intervening conversation does not erase the no-repeat window against an earlier partner', () => {
     // Regression: lastTalk kept only each agent's most recent ex-partner,
     // so one intervening conversation with anyone else silently erased

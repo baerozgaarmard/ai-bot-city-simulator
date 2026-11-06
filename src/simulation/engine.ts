@@ -280,7 +280,16 @@ export class SimEngine {
     // decision tick picks a fresh goal.
     a.paused = false; a.activityUntil = 0; a.cooldownUntil = 0; (a as any)._target = undefined
   }
-  snapshot() { return JSON.parse(JSON.stringify({ agents: this.agents, memories: this.memories, events: this.events.slice(0, 200), tick: this.tick, simMinutes: this.simMinutes, seed: this.seed, completed: this.completed, interactions: this.interactions })) }
+  snapshot() {
+    // conv is a live timer map, not serializable as-is: record the
+    // unordered pairs mid-conversation (one entry per pair, not per
+    // direction) so restore() can carry their no-repeat window, and
+    // the per-pair lastTalk windows in array form. Both are on the
+    // simMinutes timeline, so they stay valid across the round-trip.
+    const convPairs = [...this.conv].filter(([id, c]) => id < c.other).map(([id, c]) => [id, c.other])
+    const lastTalk = [...this.lastTalk].map(([id, m]) => [id, [...m]])
+    return JSON.parse(JSON.stringify({ agents: this.agents, memories: this.memories, events: this.events.slice(0, 200), tick: this.tick, simMinutes: this.simMinutes, seed: this.seed, completed: this.completed, interactions: this.interactions, convPairs, lastTalk }))
+  }
   restore(s: any) {
     this.agents = s.agents; this.memories = s.memories; this.events = s.events; this.tick = s.tick; this.simMinutes = s.simMinutes; this.completed = s.completed; this.interactions = s.interactions
     // The seed is part of the snapshot (and required by WorldSchema), so
@@ -299,10 +308,38 @@ export class SimEngine {
     // Clearing matches a fresh page load, where the guard releases
     // restored Conversing agents on the next tick.
     this.conv.clear()
-    // Same timeline argument as the conv map: lastTalk windows are on
-    // the live timeline, and loading an older save rewinds simMinutes,
-    // which would stretch a stale no-repeat window far past its intent.
+    // Restore the no-repeat windows from the snapshot, keeping only
+    // entries on the restored timeline (a real save can only hold
+    // expiries up to 30 minutes past its simMinutes; anything else is
+    // a stale or hand-edited entry and is dropped, not trusted).
+    // Without this, loading a save silently erased every window:
+    // pairs that finished talking before the save could re-form
+    // immediately after the load.
     this.lastTalk.clear()
+    if (Array.isArray(s.lastTalk)) {
+      for (const [id, entries] of s.lastTalk) {
+        if (!Array.isArray(entries)) continue
+        const m = new Map<string, number>()
+        for (const [other, until] of entries) {
+          if (typeof other === 'string' && typeof until === 'number' && until > this.simMinutes && until <= this.simMinutes + 30) m.set(other, until)
+        }
+        if (m.size) this.lastTalk.set(id, m)
+      }
+    }
+    // A pair mid-conversation when saved is cut short by the load —
+    // the guard releases both on the next tick — so treat the load as
+    // the moment they split: give them the same 30-minute no-repeat
+    // window a natural release sets. Without this the pair could
+    // re-pick Socialize at the same entrance after the 5-minute
+    // cooldown and pair again, looking like one endless conversation.
+    if (Array.isArray(s.convPairs)) {
+      for (const [a, b] of s.convPairs) {
+        if (typeof a === 'string' && typeof b === 'string') {
+          this.blockRePair(a, b, this.simMinutes + 30)
+          this.blockRePair(b, a, this.simMinutes + 30)
+        }
+      }
+    }
   }
 }
 export const engine = new SimEngine()
