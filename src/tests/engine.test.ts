@@ -57,6 +57,38 @@ describe('engine', () => {
       expect(ev!.message).toBe(m.summary)
     }
   })
+  it('pruning the event log keeps events that a memory links to', () => {
+    // Regression: the 500-event cap pruned SOCIAL events while their
+    // conversation memories survived, so after a long run every
+    // memory's sourceEventId named an event that no longer existed in
+    // engine.events (327/327 dangling in a 30k-minute probe) — the
+    // same broken link a72a16b fixed at creation, re-broken by
+    // retention. Pruning must spare events a live memory references.
+    const e = new SimEngine(3); const a = e.agents[0]
+    const ev = (e as any).log('SOCIAL', a, null, 'test conversation')
+    ;(e as any).addMemory(a, 'episodic', 'test conversation', 7, 1, [], null, ev.id, ['social'])
+    for (let i = 0; i < 600; i++) (e as any).log('GOAL', a, null, `filler ${i}`)
+    expect(e.events.some(x => x.id === ev.id)).toBe(true)
+    expect(e.memories.every(m => e.events.some(x => x.id === m.sourceEventId))).toBe(true)
+    // Still bounded: the cap plus the referenced events, no unbounded growth.
+    expect(e.events.length).toBeLessThanOrEqual(500 + e.memories.length)
+  })
+  it('a snapshot keeps the source events its memories link to', () => {
+    // Regression: snapshot() kept only the newest 200 events, so a
+    // save/load round-trip left every saved memory pointing at an
+    // event that was not in the loaded world (222/222 dangling in a
+    // 20k-minute probe) — the same broken link as the live log cap,
+    // on the persistence path.
+    const e = new SimEngine(3); const a = e.agents[0]
+    const ev = (e as any).log('SOCIAL', a, null, 'test conversation')
+    ;(e as any).addMemory(a, 'episodic', 'test conversation', 7, 1, [], null, ev.id, ['social'])
+    for (let i = 0; i < 300; i++) (e as any).log('GOAL', a, null, `filler ${i}`)
+    const snap = e.snapshot()
+    expect(snap.events.some((x: any) => x.id === ev.id)).toBe(true)
+    const e2 = new SimEngine(99); e2.restore(snap)
+    expect(e2.memories.every(m => e2.events.some(x => x.id === m.sourceEventId))).toBe(true)
+    expect(() => WorldSchema.parse(e2.snapshot())).not.toThrow()
+  })
   it('world snapshot validates with Zod', () => { const e = new SimEngine(3); expect(() => WorldSchema.parse(e.snapshot())).not.toThrow() })
   it('loading a save restores the world seed instead of keeping the fresh engine\'s seed', () => {
     // Regression: restore() copied every snapshot field except seed, so

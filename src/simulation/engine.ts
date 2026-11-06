@@ -67,7 +67,21 @@ export class SimEngine {
   timeStr() { const h = this.hour, m = this.simMinutes % 60; return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}` }
   private log(category: SimEvent['category'], agent: Agent | null, loc: Location | null, message: string) {
     const e: SimEvent = { id: nid('ev'), tick: this.tick, time: this.timeStr(), category, agentId: agent?.id ?? null, agentName: agent?.name ?? 'System', locationId: loc?.id ?? null, message }
-    this.events.unshift(e); if (this.events.length > 500) this.events.length = 500
+    this.events.unshift(e)
+    if (this.events.length > 500) {
+      // Pruning must spare events a live memory links to. The a72a16b
+      // fix made arrive() link each conversation memory to the event
+      // just logged, but the 500-event cap then pruned those SOCIAL
+      // events away while their memories survived — after a long run
+      // every memory's sourceEventId named an event that no longer
+      // existed in engine.events (327/327 dangling in a 30k-minute
+      // probe). Once a memory itself is pruned (cap 1000) its event
+      // becomes droppable again, so the log stays bounded at 500 plus
+      // the number of live memories.
+      const referenced = new Set(this.memories.map(m => m.sourceEventId))
+      const kept = this.events.filter((ev, i) => i < 500 || referenced.has(ev.id))
+      this.events.length = 0; this.events.push(...kept)
+    }
     return e
   }
   private addMemory(owner: Agent, type: Memory['type'], summary: string, importance: number, valence: number, agentIds: string[], loc: Location | null, sourceEventId: string, tags: string[]) {
@@ -292,7 +306,13 @@ export class SimEngine {
     // simMinutes timeline, so they stay valid across the round-trip.
     const convPairs = [...this.conv].filter(([id, c]) => id < c.other).map(([id, c]) => [id, c.other])
     const lastTalk = [...this.lastTalk].map(([id, m]) => [id, [...m]])
-    return JSON.parse(JSON.stringify({ agents: this.agents, memories: this.memories, events: this.events.slice(0, 200), tick: this.tick, simMinutes: this.simMinutes, seed: this.seed, completed: this.completed, interactions: this.interactions, convPairs, lastTalk }))
+    // Same retention rule as log(): the snapshot keeps the newest 200
+    // events, which used to drop every source event a saved memory
+    // links to — a load left 100% of memories dangling (222/222 in a
+    // 20k-minute probe). Keep referenced events alongside the newest 200.
+    const referenced = new Set(this.memories.map(m => m.sourceEventId))
+    const events = this.events.filter((ev, i) => i < 200 || referenced.has(ev.id))
+    return JSON.parse(JSON.stringify({ agents: this.agents, memories: this.memories, events, tick: this.tick, simMinutes: this.simMinutes, seed: this.seed, completed: this.completed, interactions: this.interactions, convPairs, lastTalk }))
   }
   restore(s: any) {
     this.agents = s.agents; this.memories = s.memories; this.events = s.events; this.tick = s.tick; this.simMinutes = s.simMinutes; this.completed = s.completed; this.interactions = s.interactions
