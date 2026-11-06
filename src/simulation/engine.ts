@@ -283,6 +283,13 @@ export class SimEngine {
   snapshot() { return JSON.parse(JSON.stringify({ agents: this.agents, memories: this.memories, events: this.events.slice(0, 200), tick: this.tick, simMinutes: this.simMinutes, seed: this.seed, completed: this.completed, interactions: this.interactions })) }
   restore(s: any) {
     this.agents = s.agents; this.memories = s.memories; this.events = s.events; this.tick = s.tick; this.simMinutes = s.simMinutes; this.completed = s.completed; this.interactions = s.interactions
+    // The seed is part of the snapshot (and required by WorldSchema), so
+    // loading a save must restore it: without this the engine kept its
+    // constructor seed (20261028 by default), and a save made after the
+    // load wrote that seed against a different world's state. The live
+    // rng stream itself is not reset — the snapshot records no draw
+    // count, so re-creating it would replay the sequence from the start.
+    if (typeof s.seed === 'number') this.seed = s.seed
     // Clear live conversation timers: they are not part of the snapshot,
     // and a stale entry from the pre-load session would outlive the load
     // — its `until` is on the old timeline, so a restored Conversing

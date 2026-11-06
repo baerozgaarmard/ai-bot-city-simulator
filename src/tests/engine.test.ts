@@ -30,6 +30,18 @@ describe('engine', () => {
     expect(e.relevantMemories(a.id, b.id)[0].summary).toContain('Bob')
   })
   it('world snapshot validates with Zod', () => { const e = new SimEngine(3); expect(() => WorldSchema.parse(e.snapshot())).not.toThrow() })
+  it('loading a save restores the world seed instead of keeping the fresh engine\'s seed', () => {
+    // Regression: restore() copied every snapshot field except seed, so
+    // an engine built with one seed kept it after loading a save made
+    // from another — and a save made after that load wrote the wrong
+    // seed against the loaded world's state. The snapshot must round-trip.
+    const e = new SimEngine(42)
+    const e2 = new SimEngine(99)
+    e2.restore(e.snapshot())
+    expect(e2.seed).toBe(42)
+    expect(e2.snapshot().seed).toBe(42)
+    expect(() => WorldSchema.parse(e2.snapshot())).not.toThrow()
+  })
   it('setting sociability keeps the displayed stat in sync with the goal-choice value', () => {
     // Regression: the inspector slider edited personality.sociability
     // (the value pickGoal reads) while the stats list showed the
