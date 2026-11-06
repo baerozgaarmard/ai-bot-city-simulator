@@ -68,6 +68,7 @@ export class SimEngine {
   private log(category: SimEvent['category'], agent: Agent | null, loc: Location | null, message: string) {
     const e: SimEvent = { id: nid('ev'), tick: this.tick, time: this.timeStr(), category, agentId: agent?.id ?? null, agentName: agent?.name ?? 'System', locationId: loc?.id ?? null, message }
     this.events.unshift(e); if (this.events.length > 500) this.events.length = 500
+    return e
   }
   private addMemory(owner: Agent, type: Memory['type'], summary: string, importance: number, valence: number, agentIds: string[], loc: Location | null, sourceEventId: string, tags: string[]) {
     const m: Memory = { id: nid('mem'), ownerId: owner.id, type, tick: this.tick, agentIds, locationId: loc?.id ?? null, summary, importance, valence, sourceEventId, tags }
@@ -145,15 +146,18 @@ export class SimEngine {
       // talking; it must be released first, never re-paired.
       const other = this.agents.find(o => o.id !== a.id && Math.round(o.pos.x) === loc.entrance.x && Math.round(o.pos.y) === loc.entrance.y && o.state === 'Socializing' && !this.conv.has(o.id) && !this.talkedRecently(a.id, o.id) && !this.talkedRecently(o.id, a.id))
       if (other) {
-        const evId = nid('ev')
+        const summary = `${a.name} and ${other.name} talked at ${loc.name} about their day.`
+        // Memories link back to the event that created them, so use the
+        // id of the event log() just created. A separately generated id
+        // used to be passed here instead, so every conversation memory's
+        // sourceEventId named an event that never existed in engine.events.
+        const ev = this.log('SOCIAL', a, loc, summary)
         this.conv.set(a.id, { other: other.id, until: this.simMinutes + 10 }); this.conv.set(other.id, { other: a.id, until: this.simMinutes + 10 })
         a.state = 'Conversing'; other.state = 'Conversing'; this.interactions++
-        const summary = `${a.name} and ${other.name} talked at ${loc.name} about their day.`
-        this.log('SOCIAL', a, loc, summary)
-        this.addMemory(a, 'episodic', summary, 7, 1, [other.id], loc, evId, ['social', loc.id])
-        this.addMemory(other, 'episodic', summary, 7, 1, [a.id], loc, evId, ['social', loc.id])
+        this.addMemory(a, 'episodic', summary, 7, 1, [other.id], loc, ev.id, ['social', loc.id])
+        this.addMemory(other, 'episodic', summary, 7, 1, [a.id], loc, ev.id, ['social', loc.id])
         a.relationships[other.id] = Math.min(100, (a.relationships[other.id] ?? 50) + 8); other.relationships[a.id] = Math.min(100, (other.relationships[a.id] ?? 50) + 8)
-        this.addMemory(a, 'relationship', `Relationship with ${other.name} improved after talking at ${loc.name}.`, 5, 1, [other.id], loc, evId, ['relationship'])
+        this.addMemory(a, 'relationship', `Relationship with ${other.name} improved after talking at ${loc.name}.`, 5, 1, [other.id], loc, ev.id, ['relationship'])
       }
     }
   }

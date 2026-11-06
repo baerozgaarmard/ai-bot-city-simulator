@@ -29,6 +29,34 @@ describe('engine', () => {
     ;(e as any).addMemory(a, 'episodic', 'Met Bob at cafe', 8, 1, [b.id], null, 'ev-1', ['social'])
     expect(e.relevantMemories(a.id, b.id)[0].summary).toContain('Bob')
   })
+  it('conversation memories reference the event that actually logged the conversation', () => {
+    // Regression: arrive() generated a fresh id for the memories'
+    // sourceEventId while log() generated its own different id for the
+    // SOCIAL event, so every conversation memory pointed at an event
+    // that never existed in engine.events. The memory must carry the id
+    // of the event just logged. (Checked at creation: the event log is
+    // capped at 500, so over a long run old source events are pruned
+    // while their memories survive — a separate retention limit, not
+    // a broken link at creation.)
+    const e = new SimEngine(1234)
+    const park = LOCATIONS.find(l => l.id === 'park')!
+    const [a, b] = e.agents
+    for (const agent of [b, a]) {
+      agent.pos = { ...park.entrance }; agent.state = 'Idle'; agent.path = []; agent.dest = null
+      agent.activityUntil = 0; agent.cooldownUntil = 0
+      ;(e as any).setGoal(agent, 'Socialize', park, 'Socializing', 'Socializing', 40)
+    }
+    expect(a.state).toBe('Conversing'); expect(b.state).toBe('Conversing')
+    const evById = new Map(e.events.map(ev => [ev.id, ev]))
+    const convMems = e.memories.filter(m => m.tags.includes('social'))
+    expect(convMems.length).toBe(2)
+    for (const m of convMems) {
+      const ev = evById.get(m.sourceEventId)
+      expect(ev).toBeDefined()
+      expect(ev!.category).toBe('SOCIAL')
+      expect(ev!.message).toBe(m.summary)
+    }
+  })
   it('world snapshot validates with Zod', () => { const e = new SimEngine(3); expect(() => WorldSchema.parse(e.snapshot())).not.toThrow() })
   it('loading a save restores the world seed instead of keeping the fresh engine\'s seed', () => {
     // Regression: restore() copied every snapshot field except seed, so
