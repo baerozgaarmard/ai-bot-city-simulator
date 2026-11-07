@@ -435,6 +435,64 @@ describe('engine', () => {
     for (const ep of episodes) { const arr = byAgent.get(ep.agent) ?? []; arr.push(ep); byAgent.set(ep.agent, arr) }
     for (const arr of byAgent.values()) for (let k = 1; k < arr.length; k++) expect(arr[k].start - arr[k - 1].end).toBeGreaterThanOrEqual(3)
   })
+  it('a Socializing agent that has a conversation still completes its Socialize goal', () => {
+    // Regression: a conversation interrupted the agent's Socializing
+    // activity, and the release dropped the activity outright — the
+    // agent went Idle, picked a new goal after the cooldown, and its
+    // Socialize goal was never recorded as completed (no GOAL event,
+    // no completed++, nothing in recentActions), even though it spent
+    // the time socializing. An agent that talked to someone therefore
+    // completed fewer goals than one that stood alone, and up to ~30
+    // minutes of its scheduled social time was abandoned after every
+    // chat. The release now keeps the Idle break, then the agent
+    // resumes its remaining social time and completes the goal when
+    // the window ends.
+    const e = new SimEngine(77); const park = LOCATIONS.find(l => l.id === 'park')!
+    const [a, b] = e.agents
+    for (const ag of e.agents) if (![a, b].includes(ag)) { ag.paused = true; ag.pos = { x: 0, y: 0 }; ag.state = 'Idle'; ag.path = [] }
+    const stage = (ag: any) => {
+      ag.pos = { ...park.entrance }; ag.state = 'Socializing'; ag.path = []; ag.dest = null
+      ag.goal = 'Socialize'; ag.activityUntil = e.simMinutes + 40; ag.cooldownUntil = 0
+      ag._target = { loc: park, state: 'Socializing', activity: 'Socializing', durationMin: 40 }
+    }
+    stage(a); stage(b); (e as any).arrive(a)
+    expect(a.state).toBe('Conversing')
+    const completedBefore = e.completed
+    const acc = { v: 0 }
+    for (let i = 0; i < 11; i++) e.step(1, acc) // past the 10-minute conversation
+    expect(a.state).toBe('Idle') // the visible break is kept
+    expect(a.activity).toBe('Finished conversation')
+    for (let i = 0; i < 5; i++) e.step(1, acc) // past the 5-minute cooldown
+    expect(a.state).toBe('Socializing') // resumes the remaining window
+    for (let i = 0; i < 30; i++) e.step(1, acc) // past the 40-minute window
+    expect(a.recentActions).toContain('Socialize at Central Park')
+    expect(e.completed).toBeGreaterThan(completedBefore)
+  })
+  it('a conversation that runs past the Socializing window still completes the goal', () => {
+    // Regression: a conversation starting near the end of the 40-minute
+    // Socializing window ran past activityUntil, and the release
+    // discarded the goal entirely — no GOAL event, no completed++, an
+    // empty recentActions. The goal still counts: the agent socialized
+    // for the full window and beyond, so the release records the
+    // completion while keeping the 5-minute cooldown.
+    const e = new SimEngine(77); const park = LOCATIONS.find(l => l.id === 'park')!
+    const [a, b] = e.agents
+    for (const ag of e.agents) if (![a, b].includes(ag)) { ag.paused = true; ag.pos = { x: 0, y: 0 }; ag.state = 'Idle'; ag.path = [] }
+    const stage = (ag: any) => {
+      ag.pos = { ...park.entrance }; ag.state = 'Socializing'; ag.path = []; ag.dest = null
+      ag.goal = 'Socialize'; ag.activityUntil = e.simMinutes + 40; ag.cooldownUntil = 0
+      ag._target = { loc: park, state: 'Socializing', activity: 'Socializing', durationMin: 40 }
+    }
+    stage(a); stage(b); (e as any).arrive(a)
+    expect(a.state).toBe('Conversing')
+    // Shrink a's window after arrive(): arrive() resets activityUntil
+    // from durationMin, so a near-end window must be staged after it.
+    a.activityUntil = e.simMinutes + 5
+    const acc = { v: 0 }
+    for (let i = 0; i < 11; i++) e.step(1, acc) // conversation ends 5 minutes past the window
+    expect(a.state).toBe('Idle')
+    expect(a.recentActions).toContain('Socialize at Central Park')
+  })
   it('a selection naming an agent that no longer exists shows nothing, not the first agent', () => {
     // Regression: selectedAgent() fell back to agents[0] whenever the
     // selected id matched nothing. Loading a save replaces engine.agents

@@ -249,10 +249,44 @@ export class SimEngine {
           // conversation") before its next goal, so each conversation
           // reads as a separate event.
           this.conv.delete(a.id); a.state = 'Idle'; a.activity = 'Finished conversation'; a.cooldownUntil = this.simMinutes + 5
+          // A conversation interrupts the agent's Socializing activity,
+          // it does not end it — but the release used to drop the
+          // activity outright. The agent went Idle, picked a new goal
+          // after the cooldown, and its Socialize goal was never
+          // recorded as completed (no GOAL event, no completed++,
+          // nothing in recentActions), even though it spent the time
+          // socializing; an agent that talked to someone therefore
+          // completed fewer goals than one that stood alone. Worse, a
+          // conversation starting near the end of the 40-minute window
+          // ran past activityUntil, and the goal was silently discarded.
+          // If the window already passed, the goal still counts:
+          // record the completion here, but keep the 5-minute cooldown
+          // (complete() alone would set 2) so the anti-chain gap holds.
+          // If time is left, the Idle branch below resumes the activity
+          // once the cooldown passes.
+          const t: any = (a as any)._target
+          if (t?.state === 'Socializing' && a.activityUntil > 0 && a.activityUntil <= this.simMinutes) {
+            this.complete(a)
+            a.state = 'Idle'; a.activity = 'Finished conversation'; a.cooldownUntil = this.simMinutes + 5
+          }
         }
         if (!a.path.length && a.state !== 'Conversing' && this.simMinutes >= a.activityUntil && this.simMinutes >= a.cooldownUntil) {
           if (a.activityUntil > 0 && a.state !== 'Idle') this.complete(a); else this.pickGoal(a)
-        } else if (!a.path.length && a.state === 'Idle' && this.simMinutes >= a.cooldownUntil) this.pickGoal(a)
+        } else if (!a.path.length && a.state === 'Idle' && this.simMinutes >= a.cooldownUntil) {
+          // Resume an interrupted Socializing activity instead of
+          // picking a new goal: a conversation only paused it, and the
+          // agent used to abandon up to ~30 minutes of its scheduled
+          // social time after every chat. Only while the window still
+          // has time left and the agent is still standing at that
+          // location's entrance — a completed or distant activity still
+          // picks a fresh goal. The resume happens here, after the
+          // cooldown, so the agent keeps its visible Idle break and
+          // cannot be re-paired until the cooldown has passed.
+          const t: any = (a as any)._target
+          if (t?.state === 'Socializing' && a.activityUntil > this.simMinutes && Math.round(a.pos.x) === t.loc.entrance.x && Math.round(a.pos.y) === t.loc.entrance.y) {
+            a.state = 'Socializing'; a.activity = t.activity; a.thought = `${t.activity} at ${t.loc.name}.`
+          } else this.pickGoal(a)
+        }
       }
     }
   }
