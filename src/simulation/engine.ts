@@ -84,6 +84,18 @@ export class SimEngine {
     }
     return e
   }
+  /** Clear the event log the way the console's Clear button means it:
+   * drop every event no live memory links to, but keep the ones memories
+   * reference. The button used to do `events.length = 0`, which left
+   * every memory's sourceEventId dangling (102/102 in a 6k-minute
+   * probe) — the same broken link the log-cap and snapshot retention
+   * rules were added to prevent. A memory outlives its source event
+   * only by being pruned itself (cap 1000); clearing the log must not
+   * orphan it first. */
+  clearEvents() {
+    const referenced = new Set(this.memories.map(m => m.sourceEventId))
+    this.events = this.events.filter(ev => referenced.has(ev.id))
+  }
   private addMemory(owner: Agent, type: Memory['type'], summary: string, importance: number, valence: number, agentIds: string[], loc: Location | null, sourceEventId: string, tags: string[]) {
     const m: Memory = { id: nid('mem'), ownerId: owner.id, type, tick: this.tick, agentIds, locationId: loc?.id ?? null, summary, importance, valence, sourceEventId, tags }
     this.memories.unshift(m); if (this.memories.length > 1000) this.memories.length = 1000; return m

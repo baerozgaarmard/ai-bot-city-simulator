@@ -89,6 +89,21 @@ describe('engine', () => {
     expect(e2.memories.every(m => e2.events.some(x => x.id === m.sourceEventId))).toBe(true)
     expect(() => WorldSchema.parse(e2.snapshot())).not.toThrow()
   })
+  it('clearing the event log keeps events that a memory links to', () => {
+    // Regression: the Event Console's Clear button did
+    // `engine.events.length = 0`, which left every memory's
+    // sourceEventId dangling (102/102 in a 6k-minute probe) — the same
+    // broken link the log-cap and snapshot retention rules were added
+    // to prevent, re-broken from the UI. Clearing must spare events a
+    // live memory references, like pruning and snapshots already do.
+    const e = new SimEngine(1234); const acc = { v: 0 }
+    for (let i = 0; i < 6000; i++) e.step(1, acc)
+    expect(e.memories.length).toBeGreaterThan(0)
+    const before = e.events.length
+    e.clearEvents()
+    expect(e.events.length).toBeLessThan(before)
+    expect(e.memories.every(m => e.events.some(x => x.id === m.sourceEventId))).toBe(true)
+  })
   it('world snapshot validates with Zod', () => { const e = new SimEngine(3); expect(() => WorldSchema.parse(e.snapshot())).not.toThrow() })
   it('loading a save restores the world seed instead of keeping the fresh engine\'s seed', () => {
     // Regression: restore() copied every snapshot field except seed, so

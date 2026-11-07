@@ -98,7 +98,7 @@ export default function App() {
                 <input className="bg-gray-900 border border-gray-700 rounded px-2 py-0.5 text-sm flex-1" placeholder="Search events…" value={ui.consoleSearch} onChange={e => ui.set({ consoleSearch: e.target.value })} />
                 <select className="bg-gray-900 border border-gray-700 rounded text-sm" value={ui.consoleCategory} onChange={e => ui.set({ consoleCategory: e.target.value })}><option>All</option><option>MOVEMENT</option><option>SOCIAL</option><option>GOAL</option><option>MEMORY</option><option>STATE</option><option>SYSTEM</option></select>
                 <label className="text-xs flex gap-1"><input type="checkbox" checked={autoscroll} onChange={e => setAutoscroll(e.target.checked)} /> Autoscroll</label>
-                <button className="text-xs px-2 py-1 bg-gray-800 rounded" onClick={() => { engine.events.length = 0; ui.sync() }}>Clear</button>
+                <button className="text-xs px-2 py-1 bg-gray-800 rounded" onClick={() => { engine.clearEvents(); ui.sync() }}>Clear</button>
                 <button className="text-xs px-2 py-1 bg-gray-800 rounded" onClick={() => ui.set({ consoleCollapsed: true })}>Collapse</button>
               </div>
               <div className="flex-1 overflow-auto px-3 py-1 font-mono text-xs" data-autoscroll={autoscroll}>
