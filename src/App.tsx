@@ -14,7 +14,7 @@ const resetCamera = async () => (await import('./city/PhaserScene')).resetCamera
 const VIEWS = [{ id: 'City', icon: Building2, label: 'City' }, { id: 'Agents', icon: Users, label: 'Agents' }, { id: 'Locations', icon: MapPin, label: 'Locations' }, { id: 'Memories', icon: Brain, label: 'Memories' }, { id: 'Event Log', icon: ListOrdered, label: 'Event Log' }, { id: 'Settings', icon: SettingsIcon, label: 'Settings' }]
 
 export default function App() {
-  const ui = useUI(); const [showAdd, setShowAdd] = useState(false); const [autoscroll, setAutoscroll] = useState(true)
+  const ui = useUI(); const [showAdd, setShowAdd] = useState(false)
   const [form, setForm] = useState({ name: '', role: 'Software Developer', locationId: 'cafe', energy: 80, mood: 70, sociability: 60 })
   const [formError, setFormError] = useState('')
   const sel = selectedAgent()
@@ -97,11 +97,10 @@ export default function App() {
                 <span className="font-semibold text-sm">Event Console</span>
                 <input className="bg-gray-900 border border-gray-700 rounded px-2 py-0.5 text-sm flex-1" placeholder="Search events…" value={ui.consoleSearch} onChange={e => ui.set({ consoleSearch: e.target.value })} />
                 <select className="bg-gray-900 border border-gray-700 rounded text-sm" value={ui.consoleCategory} onChange={e => ui.set({ consoleCategory: e.target.value })}><option>All</option><option>MOVEMENT</option><option>SOCIAL</option><option>GOAL</option><option>MEMORY</option><option>STATE</option><option>SYSTEM</option></select>
-                <label className="text-xs flex gap-1"><input type="checkbox" checked={autoscroll} onChange={e => setAutoscroll(e.target.checked)} /> Autoscroll</label>
                 <button className="text-xs px-2 py-1 bg-gray-800 rounded" onClick={() => { engine.clearEvents(); ui.sync() }}>Clear</button>
                 <button className="text-xs px-2 py-1 bg-gray-800 rounded" onClick={() => ui.set({ consoleCollapsed: true })}>Collapse</button>
               </div>
-              <div className="flex-1 overflow-auto px-3 py-1 font-mono text-xs" data-autoscroll={autoscroll}>
+              <div className="flex-1 overflow-auto px-3 py-1 font-mono text-xs">
                 {consoleEvents.map(e => <p key={e.id}>[{e.time}] [{e.category}] {e.agentName}: {e.message}</p>)}
               </div>
             </div>
