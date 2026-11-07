@@ -467,6 +467,21 @@ describe('engine', () => {
     expect(a.state).toBe('Idle')
     expect(a.energy).toBeGreaterThan(50)
   })
+  it('sync() bumps rev on every call so memos recompute even when the tick has not advanced', () => {
+    // Regression: sync() used to set only tick: engine.tick, so a UI
+    // action that mutates engine state without advancing the clock
+    // (Add Agent, Reset Agent, Clear event log) left every memo dep
+    // unchanged — the registry, metrics and console kept serving stale
+    // lists until the next sim minute. A newly added agent was
+    // invisible for 2-5s after the dialog closed, looking like the add
+    // had silently failed. sync() now bumps a revision counter, and the
+    // memos key on it.
+    const ui = useUI.getState()
+    const before = ui.rev
+    ui.sync(); ui.sync()
+    expect(useUI.getState().rev).toBe(before + 2)
+    expect(useUI.getState().tick).toBe(engine.tick)
+  })
   it('resetting a paused agent unpauses it instead of freezing it on Reset', () => {
     // Regression: resetAgent left paused=true untouched, so step() kept
     // skipping the agent forever — it sat on Idle/"Reset" with no goal
