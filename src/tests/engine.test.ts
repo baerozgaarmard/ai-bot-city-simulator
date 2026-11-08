@@ -565,4 +565,31 @@ describe('engine', () => {
     expect(a.state).not.toBe('Idle')
     expect(a.activity).not.toBe('Reset')
   })
+  it('hunger does not saturate: agents rarely sit at 100 and sleeps rarely end starving', () => {
+    // Regression: hunger rose 0.7/min (+1008/day) while a meal only
+    // removes 50, so even eating 10 times a day could not keep up — in
+    // a 30k-minute probe agents spent ~49% of their lives pinned at
+    // hunger 100 and 98.5% of sleeps ended starving, so the hunger stat
+    // was meaningless. The +40 Eat bonus at hunger >= 80 only treated
+    // the extreme; the drain itself outran every meal. At 0.25/min the
+    // same probe shows ~3% of time at 100 and ~2% of sleeps ending
+    // starving. Thresholds are loose (this probe drives step(1), so
+    // walks take 3x longer than in real-time play and meals arrive
+    // late) — they catch a return to saturation, not small drift.
+    const e = new SimEngine(11)
+    const acc = { v: 0 }
+    let hunger100Min = 0, sleeps = 0, sleepsEndingAt100 = 0
+    for (let i = 0; i < 30000; i++) {
+      const before = new Map(e.agents.map(a => [a.id, a.state]))
+      e.step(1, acc)
+      for (const a of e.agents) {
+        if (a.hunger >= 100) hunger100Min++
+        if (before.get(a.id) !== 'Sleeping' && a.state === 'Sleeping') sleeps++
+        if (before.get(a.id) === 'Sleeping' && a.state !== 'Sleeping' && a.hunger >= 100) sleepsEndingAt100++
+      }
+    }
+    const agentMin = 30000 * e.agents.length
+    expect(hunger100Min / agentMin).toBeLessThan(0.1)
+    expect(sleepsEndingAt100 / sleeps).toBeLessThan(0.1)
+  })
 })

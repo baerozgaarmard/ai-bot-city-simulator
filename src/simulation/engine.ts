@@ -232,7 +232,14 @@ export class SimEngine {
       accumulated.v -= 60; this.tick++; this.simMinutes++
       for (const a of this.agents) {
         if (a.paused) continue
-        a.energy = Math.max(0, a.energy - 0.4); a.hunger = Math.min(100, a.hunger + 0.7)
+        // Hunger rises 0.25/min, not 0.7: at 0.7 it climbed +1008/day
+        // while a meal only removes 50, so even eating 10 times a day
+        // could not keep up — agents spent ~49% of their lives pinned
+        // at hunger 100, 98.5% of sleeps ended starving, and the hunger
+        // stat sat at max instead of varying. At 0.25 (+360/day) a meal
+        // every few hours balances: ~3% of time at 100, ~2% of sleeps
+        // ending starving, meals ~7/agent/day.
+        a.energy = Math.max(0, a.energy - 0.4); a.hunger = Math.min(100, a.hunger + 0.25)
         if (a.mood < 40) a.mood = Math.min(100, a.mood + 0.2)
         const conv = this.conv.get(a.id)
         // A Conversing agent with no conv entry is desynced — this happens
