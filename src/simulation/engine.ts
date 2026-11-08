@@ -198,6 +198,19 @@ export class SimEngine {
   private complete(a: Agent) {
     const loc = LOCATIONS.find(l => l.entrance.x === Math.round(a.pos.x) && l.entrance.y === Math.round(a.pos.y))
     this.completed++; a.recentActions.unshift(`${a.goal} at ${loc?.name ?? 'town'}`); a.recentActions = a.recentActions.slice(0, 5)
+    // Recovery stays a lump sum at completion (see step()): Resting +40
+    // and Sleeping +80 are calibrated against the 0.4/min drain, and the
+    // drain clamps at 0 mid-activity, so an exhausted sleeper wakes with
+    // more than the nominal net — the day's rhythm (prompt morning
+    // meals, rare starving sleeps) is calibrated on those totals.
+    // Clearing the target and window matters: complete() can now run
+    // mid-activity (the exhaustion interrupt below), and without this
+    // the Idle branch would resume the "completed" activity — re-picking
+    // Socialize at the same entrance, hitting zero energy again, and
+    // completing it again, farming completions in a loop. Existing
+    // callers only complete when the window already passed, so the
+    // resume check (activityUntil in the future) was already false
+    // for them.
     if (a.state === 'Eating') { a.hunger = Math.max(0, a.hunger - 50); a.energy = Math.min(100, a.energy + 10) }
     if (a.state === 'Resting') a.energy = Math.min(100, a.energy + 40)
     // Sleeping must restore more than Resting: a sleep lasts 120 minutes
@@ -207,7 +220,7 @@ export class SimEngine {
     if (a.state === 'Sleeping') a.energy = Math.min(100, a.energy + 80)
     if (a.state === 'Working') a.confidence = Math.min(100, a.confidence + 5)
     this.log('GOAL', a, loc ?? null, `${a.name} completed ${a.goal.toLowerCase()}.`)
-    a.cooldownUntil = this.simMinutes + 2; a.state = 'Idle'; a.activity = 'Deciding what to do next'; a.dest = null; a.path = []
+    a.cooldownUntil = this.simMinutes + 2; a.state = 'Idle'; a.activity = 'Deciding what to do next'; a.dest = null; a.path = []; a.activityUntil = 0; (a as any)._target = undefined
   }
   /** Advance simulation by real seconds (already speed-scaled by caller).
    * Time scale: 1 real second at 1x = 1 sim minute. Previously the
@@ -284,6 +297,22 @@ export class SimEngine {
             this.complete(a)
             a.state = 'Idle'; a.activity = 'Finished conversation'; a.cooldownUntil = this.simMinutes + 5
           }
+        }
+        // Exhaustion interrupt: an agent that hits 0 energy mid-activity
+        // stops instead of finishing the shift at zero. Without this,
+        // pickGoal's utilities only decide at the START of an activity —
+        // Work beats Rest down to ~energy 20 — so an agent that began a
+        // 90-minute shift tired drained to 0 halfway through and then
+        // worked a full hour at 0, walked home, and rested a full hour
+        // at 0: a 138-minute streak at zero energy, identical on every
+        // seed (Peter the Baker, deterministic work hours). Eating,
+        // Resting and Sleeping are restorative and never interrupted;
+        // Conversing is capped at 10 minutes by its own timer. Ending
+        // the activity through complete() records the goal (no dropped
+        // goals, same as the conversation release) and the 2-minute
+        // cooldown sends the agent home to rest on the next pick.
+        if (!a.path.length && a.energy <= 0 && this.simMinutes < a.activityUntil && ['Working', 'Shopping', 'Commuting', 'Socializing'].includes(a.state)) {
+          this.complete(a)
         }
         if (!a.path.length && a.state !== 'Conversing' && this.simMinutes >= a.activityUntil && this.simMinutes >= a.cooldownUntil) {
           if (a.activityUntil > 0 && a.state !== 'Idle') this.complete(a); else this.pickGoal(a)

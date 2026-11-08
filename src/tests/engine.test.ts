@@ -565,6 +565,46 @@ describe('engine', () => {
     expect(a.state).not.toBe('Idle')
     expect(a.activity).not.toBe('Reset')
   })
+  it('an agent that hits zero energy mid-shift stops working instead of finishing the shift at zero', () => {
+    // Regression: pickGoal's utilities only decide at the START of an
+    // activity — Work beats Rest down to ~energy 20 — so an agent that
+    // began a 90-minute shift tired drained to 0 halfway through and
+    // kept working a full hour at 0 energy (a 138-minute streak at zero
+    // in a 30k-minute probe, identical on every seed). Hitting 0
+    // mid-activity now ends it: the goal is recorded, and the agent
+    // goes home to rest on the next pick instead of working on empty.
+    const e = new SimEngine(7); const a = e.agents[0]
+    const office = LOCATIONS.find(l => l.id === 'office')!
+    a.pos = { ...office.entrance }; a.state = 'Working'; a.goal = 'Work'; a.path = []; a.dest = null
+    a.activity = 'Working at Office Building'; a.activityUntil = e.simMinutes + 90; a.cooldownUntil = 0
+    a.energy = 5; a.hunger = 0
+    ;(a as any)._target = { loc: office, state: 'Working', activity: 'Working at Office Building', durationMin: 90 }
+    const acc = { v: 0 }
+    for (let i = 0; i < 20; i++) e.step(1, acc) // energy hits 0 after ~13 minutes
+    expect(a.state).not.toBe('Working')
+    expect(a.recentActions).toContain('Work at Office Building')
+  })
+  it('no agent works, shops, commutes or socializes at zero energy for more than a few minutes', () => {
+    // Regression: same 138-minute zero-energy streak as above — a
+    // 30k-minute probe showed Peter working ~60 continuous minutes at 0
+    // every day, then walking home and resting an hour at 0. The
+    // interrupt ends a non-restorative activity the minute energy hits
+    // 0, so the streak in those states is at most sampling noise.
+    // Resting/Sleeping/Eating at 0 are the recovery itself (lump sum at
+    // completion, by design) and are not counted here.
+    const e = new SimEngine(1); const acc = { v: 0 }
+    const INTERRUPTIBLE = ['Working', 'Shopping', 'Commuting', 'Socializing']
+    let maxStreak = 0
+    const streak = new Map<string, number>()
+    for (let i = 0; i < 30000; i++) {
+      e.step(1, acc)
+      for (const a of e.agents) {
+        const s = a.energy <= 0 && INTERRUPTIBLE.includes(a.state) ? (streak.get(a.id) ?? 0) + 1 : 0
+        streak.set(a.id, s); maxStreak = Math.max(maxStreak, s)
+      }
+    }
+    expect(maxStreak).toBeLessThanOrEqual(5)
+  })
   it('hunger does not saturate: agents rarely sit at 100 and sleeps rarely end starving', () => {
     // Regression: hunger rose 0.7/min (+1008/day) while a meal only
     // removes 50, so even eating 10 times a day could not keep up — in
