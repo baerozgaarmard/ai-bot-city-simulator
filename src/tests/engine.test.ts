@@ -24,6 +24,18 @@ describe('engine', () => {
     const acc = { v: 0 }; for (let i = 0; i < 3; i++) e.step(1, acc)
     expect(['Resting', 'Sleeping', 'Walking']).toContain(a.state)
   })
+  it('a starving agent eats before sleeping at night', () => {
+    // Regression: at night Sleep's utility (90 night bonus + up to 40
+    // for low energy = 130) beat Eat at maximum hunger (100 * 1.2 =
+    // 120), so a starving, tired agent went to bed instead of eating a
+    // 30-minute meal — in a 10k-minute probe agents sat at 100 hunger
+    // for up to 117 continuous minutes, and most nights the whole city
+    // slept starving. A meal must dominate once hunger is critical.
+    const e = new SimEngine(7); e.simMinutes = 23 * 60 // 23:00, night
+    const a = e.agents[0]; a.hunger = 95; a.energy = 10; a.state = 'Idle'; a.activityUntil = 0; a.cooldownUntil = 0; a.path = []; a.dest = null; a.pos = { x: 6, y: 12 }; (a as any)._target = undefined
+    const acc = { v: 0 }; e.step(1, acc)
+    expect(a.goal).toBe('Eat')
+  })
   it('memories come from real events and can be retrieved', () => {
     const e = new SimEngine(9); const a = e.agents[0]; const b = e.agents[1]
     ;(e as any).addMemory(a, 'episodic', 'Met Bob at cafe', 8, 1, [b.id], null, 'ev-1', ['social'])

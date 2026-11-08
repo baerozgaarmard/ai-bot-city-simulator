@@ -143,7 +143,15 @@ export class SimEngine {
     // [goal, location, state, activity, duration, utility]
     const workLoc = this.locById(a.workplace)
     candidates.push(['Work', workLoc, 'Working', `Working at ${workLoc.name}`, 90, (hour >= 9 && hour < 17 ? 70 : 10) + a.personality.routine * 0.3])
-    candidates.push(['Eat', this.locById(a.hunger > 50 ? 'restaurant' : 'cafe'), 'Eating', 'Eating', 30, a.hunger * 1.2 + (hour === 12 || hour === 19 ? 20 : 0)])
+    // Starving agents eat first: without the critical-hunger bonus,
+    // Sleep's night bonus (90) plus its low-energy term (up to 40)
+    // totals 130 and beats a meal at maximum hunger (100 * 1.2 = 120),
+    // so a starving, tired agent went to bed instead of eating — agents
+    // sat at 100 hunger for up to 117 continuous minutes in a 10k-minute
+    // probe, and most nights the whole city slept starving. At hunger
+    // 80 the meal scores 96 + 40 = 136, above every other candidate's
+    // maximum; below 80 the choice is unchanged.
+    candidates.push(['Eat', this.locById(a.hunger > 50 ? 'restaurant' : 'cafe'), 'Eating', 'Eating', 30, a.hunger * 1.2 + (hour === 12 || hour === 19 ? 20 : 0) + (a.hunger >= 80 ? 40 : 0)])
     candidates.push(['Rest', this.locById('residential'), 'Resting', 'Resting at home', 60, (100 - a.energy) * 1.1])
     candidates.push(['Sleep', this.locById('residential'), 'Sleeping', 'Sleeping', 120, (hour >= 22 || hour < 6 ? 90 : 0) + (100 - a.energy) * 0.4])
     candidates.push(['Socialize', this.locById(this.rng() > 0.5 ? 'park' : 'cafe'), 'Socializing', 'Socializing', 40, a.personality.sociability * 0.8 + (a.mood < 50 ? 20 : 0)])
