@@ -36,6 +36,30 @@ describe('engine', () => {
     const acc = { v: 0 }; e.step(1, acc)
     expect(a.goal).toBe('Eat')
   })
+  it('mood falls when an agent is starving or exhausted, and recovers when fed and rested', () => {
+    // Regression: nothing ever lowered mood — agents spawned at 60-90
+    // and the only mood write was a recovery below 40, which no agent
+    // could ever reach — so the inspector's Mood % and the metrics' Avg
+    // mood were frozen for an agent's whole life (0 of 24 agents' mood
+    // changed over 10k sim-minutes), and the Socialize utility's
+    // `mood < 50` bonus was dead code. Hunger and exhaustion must drag
+    // mood down; being fed and rested must let it recover.
+    const e = new SimEngine(42); const acc = { v: 0 }
+    const a = e.agents[0]
+    a.mood = 70; a.hunger = 90; a.energy = 50
+    for (let i = 0; i < 10; i++) e.step(1, acc)
+    expect(a.mood).toBeLessThan(70)
+    a.mood = 30; a.hunger = 0; a.energy = 90; a.state = 'Idle'; a.activityUntil = 0; a.cooldownUntil = 0; a.path = []; a.dest = null; (a as any)._target = undefined
+    for (let i = 0; i < 10; i++) e.step(1, acc)
+    expect(a.mood).toBeGreaterThan(30)
+  })
+  it('mood moves over a long run instead of staying frozen at its spawn value', () => {
+    const e = new SimEngine(42); const acc = { v: 0 }
+    const before = e.agents.map(a => a.mood)
+    for (let i = 0; i < 10000; i++) e.step(1, acc)
+    const changed = e.agents.filter((a, i) => a.mood !== before[i]).length
+    expect(changed).toBeGreaterThan(0)
+  })
   it('memories come from real events and can be retrieved', () => {
     const e = new SimEngine(9); const a = e.agents[0]; const b = e.agents[1]
     ;(e as any).addMemory(a, 'episodic', 'Met Bob at cafe', 8, 1, [b.id], null, 'ev-1', ['social'])
