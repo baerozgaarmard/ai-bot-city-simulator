@@ -155,7 +155,16 @@ export class SimEngine {
     candidates.push(['Rest', this.locById('residential'), 'Resting', 'Resting at home', 60, (100 - a.energy) * 1.1])
     candidates.push(['Sleep', this.locById('residential'), 'Sleeping', 'Sleeping', 120, (hour >= 22 || hour < 6 ? 90 : 0) + (100 - a.energy) * 0.4])
     candidates.push(['Socialize', this.locById(this.rng() > 0.5 ? 'park' : 'cafe'), 'Socializing', 'Socializing', 40, a.personality.sociability * 0.8 + (a.mood < 50 ? 20 : 0)])
-    candidates.push(['Shop', this.locById('shop'), 'Shopping', 'Shopping', 25, 25 + a.personality.curiosity * 0.2])
+    // Shop used to score 25 + curiosity * 0.2 (29-44), below every other
+    // goal's floor — Work is 70+ in the day, Sleep 90+ at night, Rest up
+    // to 110, Eat up to 160, Socialize up to 88 — so it could only win
+    // in a narrow corner (fed, rested, off-hours, low sociability and
+    // low routine at once): 4-23 shopping trips per 30k minutes across
+    // the whole city, vs ~3,300 meals, and the Corner Shop was
+    // effectively decorative. It now scales with curiosity the way
+    // Socialize scales with sociability (24-76), so curious agents shop
+    // in their spare hours without it outbidding work, meals or sleep.
+    candidates.push(['Shop', this.locById('shop'), 'Shopping', 'Shopping', 25, a.personality.curiosity * 0.8])
     candidates.push(['Commute', this.locById('bus'), 'Commuting', 'Waiting for the bus', 15, hour === 8 || hour === 17 ? 45 : 5])
     candidates.sort((x, y) => y[5] - x[5])
     const [goal, loc, state, activity, dur] = candidates[0]

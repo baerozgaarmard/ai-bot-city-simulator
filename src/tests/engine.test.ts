@@ -643,6 +643,35 @@ describe('engine', () => {
     }
     expect(maxStreak).toBeLessThanOrEqual(5)
   })
+  it('agents shop sometimes instead of never visiting the Corner Shop', () => {
+    // Regression: Shop scored 25 + curiosity * 0.2 (29-44), below every
+    // other goal's floor — Work is 70+ in the day, Sleep 90+ at night,
+    // Rest up to 110, Eat up to 160, Socialize up to 88 — so it could
+    // only win in a narrow corner (fed, rested, off-hours, low
+    // sociability and low routine at once): 4-23 shopping trips per
+    // 30k minutes across the whole city, vs ~3,300 meals, and the
+    // Corner Shop was effectively decorative. It now scales with
+    // curiosity like Socialize scales with sociability, so curious
+    // agents shop in their spare hours: ~2% of agent-minutes and
+    // ~550 trips per 30k minutes, on par with socializing, without
+    // outbidding work, meals or sleep. Thresholds are loose — they
+    // catch a return to a dead goal, not small drift.
+    const e = new SimEngine(1)
+    const acc = { v: 0 }
+    let shopMin = 0, trips = 0
+    for (let i = 0; i < 30000; i++) {
+      const before = new Map(e.agents.map(a => [a.id, a.state]))
+      e.step(1, acc)
+      for (const a of e.agents) {
+        if (a.state === 'Shopping') shopMin++
+        if (before.get(a.id) !== 'Shopping' && a.state === 'Shopping') trips++
+      }
+    }
+    const agentMin = 30000 * e.agents.length
+    expect(shopMin / agentMin).toBeGreaterThan(0.005)
+    expect(shopMin / agentMin).toBeLessThan(0.1)
+    expect(trips).toBeGreaterThan(100)
+  })
   it('hunger does not saturate: agents rarely sit at 100 and sleeps rarely end starving', () => {
     // Regression: hunger rose 0.7/min (+1008/day) while a meal only
     // removes 50, so even eating 10 times a day could not keep up — in
