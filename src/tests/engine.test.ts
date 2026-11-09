@@ -53,6 +53,20 @@ describe('engine', () => {
     for (let i = 0; i < 10; i++) e.step(1, acc)
     expect(a.mood).toBeGreaterThan(30)
   })
+  it('mood recovers from the middle of the range, not only below 40', () => {
+    // Regression: the recovery branch fired only while mood < 40, so
+    // mood could only fall in the 40-100 band and never climb back — a
+    // fed, rested agent at 45 stayed at 45 forever, and over a long run
+    // every agent ratcheted down to 40 (24/24 at 11-40, median 39,
+    // after 10k minutes). Recovery must apply whenever the agent is fed
+    // and rested, at any mood.
+    const e = new SimEngine(42); const acc = { v: 0 }
+    const a = e.agents[0]
+    a.mood = 45; a.hunger = 0; a.energy = 90
+    a.state = 'Idle'; a.activityUntil = 0; a.cooldownUntil = 0; a.path = []; a.dest = null; (a as any)._target = undefined
+    for (let i = 0; i < 60; i++) e.step(1, acc)
+    expect(a.mood).toBeGreaterThan(45)
+  })
   it('mood moves over a long run instead of staying frozen at its spawn value', () => {
     const e = new SimEngine(42); const acc = { v: 0 }
     const before = e.agents.map(a => a.mood)

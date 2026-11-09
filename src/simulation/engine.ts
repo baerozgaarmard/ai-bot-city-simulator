@@ -255,15 +255,16 @@ export class SimEngine {
         a.energy = Math.max(0, a.energy - 0.4); a.hunger = Math.min(100, a.hunger + 0.25)
         // Mood responds to how the agent feels: being very hungry or
         // exhausted drags it down, and being fed and rested lets it
-        // recover. Previously nothing ever lowered mood — agents spawned
-        // at 60-90 and the only mood write was a recovery that fired
-        // below 40, which no agent could ever reach — so the inspector's
-        // Mood % and the metrics' Avg mood were frozen for an agent's
-        // whole life, and the Socialize utility's `mood < 50` bonus was
-        // dead code that could never trigger. A low mood now also makes
-        // a sad agent seek company, which is what that bonus is for.
+        // recover. The recovery used to fire only below 40, so mood could
+        // only fall in the 40-100 band and never climb back: over a long
+        // run every agent ratcheted down to 40 and stayed there (24/24
+        // agents at 11-40, median 39, after 10k minutes), the whole city
+        // permanently glum and the inspector's Mood % flat at the same
+        // value for days. Recovery now applies whenever the agent is fed
+        // and rested, at any mood, so mood rises and falls with how the
+        // agent is actually doing instead of converging on 40.
         if (a.hunger >= 80 || a.energy <= 10) a.mood = Math.max(0, a.mood - 0.2)
-        else if (a.mood < 40) a.mood = Math.min(100, a.mood + 0.2)
+        else a.mood = Math.min(100, a.mood + 0.2)
         const conv = this.conv.get(a.id)
         // A Conversing agent with no conv entry is desynced — this happens
         // after snapshot/restore, because the conv timer map is not part of
