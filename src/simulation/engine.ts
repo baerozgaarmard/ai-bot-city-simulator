@@ -259,8 +259,16 @@ export class SimEngine {
     // bonus must not keep stacking and send it straight back out. The
     // conversation path reaches here too (complete() runs when the
     // Socializing window ends, including after a conversation), so one
-    // recording point covers every way the activity ends.
-    if (a.state === 'Socializing') this.lastSocial.set(a.id, this.simMinutes)
+    // recording point covers every way the activity ends. Check the
+    // goal, not the state: when a conversation runs past the window,
+    // the release sets state to 'Idle' before calling complete(), so a
+    // state check misses exactly that case — and it is the common one
+    // for the partner, whose window can have under 10 minutes left when
+    // the other agent arrives and pairs with them. Without this the
+    // partner's clock kept accruing from its last outing and its
+    // Socialize utility stayed inflated, sending it straight back out
+    // after the cooldown instead of moving on.
+    if (a.goal === 'Socialize') this.lastSocial.set(a.id, this.simMinutes)
     this.log('GOAL', a, loc ?? null, `${a.name} completed ${a.goal.toLowerCase()}.`)
     a.cooldownUntil = this.simMinutes + 2; a.state = 'Idle'; a.activity = 'Deciding what to do next'; a.dest = null; a.path = []; a.activityUntil = 0; (a as any)._target = undefined
   }
