@@ -41,6 +41,25 @@ export class SimEngine {
   completed = 0; interactions = 0; paused = false; speed = 1
   private grid = walkableGrid(); private conv = new Map<string, { other: string; until: number }>()
   private lastTalk = new Map<string, Map<string, number>>()
+  // When each agent last finished a Socializing activity, on the
+  // simMinutes timeline. Socialize's utility grows the longer an agent
+  // goes without social time (see pickGoal): without it the goal was
+  // effectively dead for nearly half the city — 10-14 of 24 agents
+  // never socialized once in a 30k-minute probe on four seeds, including
+  // the two most sociable agents (Tara 85, Charlie 80), because its
+  // fixed utility always lost to a higher fixed one in spare time: Shop
+  // (curiosity * 0.8, up to 76) beat it for every curious agent, and
+  // Work's off-hours floor (10 + routine * 0.3, up to 38.5) beat it for
+  // every agent with sociability under ~48. The Relationships panel
+  // showed "No relationships yet" for those agents forever, and the
+  // whole city managed only 134-184 conversations in 21 sim-days.
+  // The bonus caps at 45 (about two days alone): enough that the most
+  // curious agent (Quinn, 36 + 45 = 81) eventually outbids Shop (76),
+  // and the least sociable (Leo, 28) eventually outbids Work's
+  // off-hours floor, but a single social outing resets it, so in
+  // steady state it stays low and never outbids work, meals or sleep
+  // the way a flat base would.
+  private lastSocial = new Map<string, number>()
   // One no-repeat expiry per (agent, ex-partner) pair, not one per
   // agent: the old single-slot map kept only each agent's MOST RECENT
   // ex-partner, so one intervening conversation with anyone else
@@ -116,6 +135,12 @@ export class SimEngine {
       // beside an entrance can be a building tile, which made A* return [].
       return { id: `agent-${i}-${name.toLowerCase()}`, name, role, color: COLORS[i % COLORS.length], personality: { sociability: soc, energyNeed: en, curiosity: cur, routine }, pos: { ...loc.entrance }, dest: null, path: [], state: 'Idle' as AgentState, activity: 'Arriving in Smallville', goal: 'Settle in', intention: 'Find a routine', thought: 'Just arrived in Smallville.', energy: 60 + Math.floor(this.rng() * 30), hunger: Math.floor(this.rng() * 40), mood: 60 + Math.floor(this.rng() * 30), sociability: soc, confidence: 55 + Math.floor(this.rng() * 30), home, workplace: work, paused: false, activityUntil: 0, cooldownUntil: 0, relationships: {}, recentActions: [] } as Agent
     })
+    // The loneliness clock starts at spawn: an agent that never
+    // socializes must accrue the bonus from its first day, not from a
+    // missing map entry (pickGoal treats a missing entry as "just
+    // socialized", so without this the bonus stayed 0 forever for the
+    // very agents it was meant to rescue).
+    for (const a of this.agents) this.lastSocial.set(a.id, this.simMinutes)
   }
   private locById(id: string) { return LOCATIONS.find(l => l.id === id)! }
   private talkedRecently(aId: string, bId: string) {
@@ -154,7 +179,7 @@ export class SimEngine {
     candidates.push(['Eat', this.locById(a.hunger > 50 ? 'restaurant' : 'cafe'), 'Eating', 'Eating', 30, a.hunger * 1.2 + (hour === 12 || hour === 19 ? 20 : 0) + (a.hunger >= 80 ? 40 : 0)])
     candidates.push(['Rest', this.locById('residential'), 'Resting', 'Resting at home', 60, (100 - a.energy) * 1.1])
     candidates.push(['Sleep', this.locById('residential'), 'Sleeping', 'Sleeping', 120, (hour >= 22 || hour < 6 ? 90 : 0) + (100 - a.energy) * 0.4])
-    candidates.push(['Socialize', this.locById(this.rng() > 0.5 ? 'park' : 'cafe'), 'Socializing', 'Socializing', 40, a.personality.sociability * 0.8 + (a.mood < 50 ? 20 : 0)])
+    candidates.push(['Socialize', this.locById(this.rng() > 0.5 ? 'park' : 'cafe'), 'Socializing', 'Socializing', 40, a.personality.sociability * 0.8 + (a.mood < 50 ? 20 : 0) + Math.min(45, (this.simMinutes - (this.lastSocial.get(a.id) ?? this.simMinutes)) / 60)])
     // Shop used to score 25 + curiosity * 0.2 (29-44), below every other
     // goal's floor — Work is 70+ in the day, Sleep 90+ at night, Rest up
     // to 110, Eat up to 160, Socialize up to 88 — so it could only win
@@ -228,6 +253,14 @@ export class SimEngine {
     // +80 nets +32 over the night, the same recovery rate as a rest.
     if (a.state === 'Sleeping') a.energy = Math.min(100, a.energy + 80)
     if (a.state === 'Working') a.confidence = Math.min(100, a.confidence + 5)
+    // A finished Socializing activity resets the loneliness clock, even
+    // if no conversation happened: the agent went out to a social place
+    // and spent the time there, so the "hasn't socialized in days"
+    // bonus must not keep stacking and send it straight back out. The
+    // conversation path reaches here too (complete() runs when the
+    // Socializing window ends, including after a conversation), so one
+    // recording point covers every way the activity ends.
+    if (a.state === 'Socializing') this.lastSocial.set(a.id, this.simMinutes)
     this.log('GOAL', a, loc ?? null, `${a.name} completed ${a.goal.toLowerCase()}.`)
     a.cooldownUntil = this.simMinutes + 2; a.state = 'Idle'; a.activity = 'Deciding what to do next'; a.dest = null; a.path = []; a.activityUntil = 0; (a as any)._target = undefined
   }
@@ -368,6 +401,7 @@ export class SimEngine {
   addAgent(input: { name: string; role: string; personality: Agent['personality']; locationId: string; energy: number; mood: number }) {
     const loc = this.locById(input.locationId)
     const a: Agent = { id: nid('agent'), name: input.name, role: input.role, color: pick(this.rng, COLORS), personality: input.personality, pos: { ...loc.entrance }, dest: null, path: [], state: 'Idle', activity: 'Arriving', goal: 'Settle in', intention: 'Settle in', thought: 'New in Smallville.', energy: input.energy, hunger: 20, mood: input.mood, sociability: input.personality.sociability, confidence: 60, home: 'residential', workplace: 'office', paused: false, activityUntil: 0, cooldownUntil: 0, relationships: {}, recentActions: [] }
+    this.lastSocial.set(a.id, this.simMinutes)
     this.agents.push(a); this.log('SYSTEM', a, loc, `${a.name} joined Smallville as ${a.role}.`); return a
   }
   setSociability(id: string, value: number) {
@@ -427,13 +461,18 @@ export class SimEngine {
     // simMinutes timeline, so they stay valid across the round-trip.
     const convPairs = [...this.conv].filter(([id, c]) => id < c.other).map(([id, c]) => [id, c.other])
     const lastTalk = [...this.lastTalk].map(([id, m]) => [id, [...m]])
+    // The loneliness clock is per-agent state on the simMinutes timeline,
+    // like lastTalk: without it a load reset every agent to "never
+    // socialized", maxing the Socialize bonus for the whole city at once
+    // and sending everyone to the park/cafe instead of work.
+    const lastSocial = [...this.lastSocial]
     // Same retention rule as log(): the snapshot keeps the newest 200
     // events, which used to drop every source event a saved memory
     // links to — a load left 100% of memories dangling (222/222 in a
     // 20k-minute probe). Keep referenced events alongside the newest 200.
     const referenced = new Set(this.memories.map(m => m.sourceEventId))
     const events = this.events.filter((ev, i) => i < 200 || referenced.has(ev.id))
-    return JSON.parse(JSON.stringify({ agents: this.agents, memories: this.memories, events, tick: this.tick, simMinutes: this.simMinutes, seed: this.seed, completed: this.completed, interactions: this.interactions, convPairs, lastTalk }))
+    return JSON.parse(JSON.stringify({ agents: this.agents, memories: this.memories, events, tick: this.tick, simMinutes: this.simMinutes, seed: this.seed, completed: this.completed, interactions: this.interactions, convPairs, lastTalk, lastSocial }))
   }
   restore(s: any) {
     this.agents = s.agents; this.memories = s.memories; this.events = s.events; this.tick = s.tick; this.simMinutes = s.simMinutes; this.completed = s.completed; this.interactions = s.interactions
@@ -471,7 +510,23 @@ export class SimEngine {
         if (m.size) this.lastTalk.set(id, m)
       }
     }
-    // A pair mid-conversation when saved is cut short by the load —
+    // Restore the loneliness clock from the snapshot, keeping only
+    // timestamps on the restored timeline (a save can only hold a time
+    // up to its own simMinutes; anything later is stale or hand-edited
+    // and is dropped, so the agent starts from "just socialized" rather
+    // than from a maxed bonus). Saves from before this field simply have
+    // no entry, and pickGoal treats a missing entry as "just
+    // socialized", so a load never triggers a city-wide social rush.
+    this.lastSocial.clear()
+    if (Array.isArray(s.lastSocial)) {
+      for (const [id, at] of s.lastSocial) {
+        if (typeof id === 'string' && typeof at === 'number' && at <= this.simMinutes) this.lastSocial.set(id, at)
+      }
+    }
+    // Agents from a save made before this field existed have no entry:
+    // start their clock at the load, not at "never socialized", so the
+    // load does not max everyone's bonus at once (see snapshot()).
+    for (const a of this.agents) if (!this.lastSocial.has(a.id)) this.lastSocial.set(a.id, this.simMinutes)
     // the guard releases both on the next tick — so treat the load as
     // the moment they split: give them the same 30-minute no-repeat
     // window a natural release sets. Without this the pair could

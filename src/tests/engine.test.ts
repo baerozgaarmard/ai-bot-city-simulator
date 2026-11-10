@@ -685,6 +685,46 @@ describe('engine', () => {
     expect(shopMin / agentMin).toBeLessThan(0.1)
     expect(trips).toBeGreaterThan(100)
   })
+  it('lonely agents eventually socialize instead of never talking to anyone', () => {
+    // Regression: Socialize's fixed utility always lost to a higher
+    // fixed one in spare time — Shop (curiosity * 0.8, up to 76) beat
+    // it for every curious agent, and Work's off-hours floor
+    // (10 + routine * 0.3, up to 38.5) beat it for every agent with
+    // sociability under ~48 — so on four seeds 10-14 of 24 agents never
+    // socialized once in 30k minutes, including the two most sociable
+    // agents (Tara 85, Charlie 80), and the whole city managed only
+    // 134-184 conversations in 21 sim-days. Socialize now gains a
+    // loneliness bonus of +1/hour since the agent last finished a
+    // Socializing activity (capped at 45), so every agent eventually
+    // seeks company and every agent forms at least one relationship.
+    // Thresholds are loose — they catch a return to a dead goal, not
+    // small drift.
+    const e = new SimEngine(1)
+    const acc = { v: 0 }
+    const socialMin = new Map(e.agents.map(a => [a.id, 0]))
+    for (let i = 0; i < 30000; i++) {
+      e.step(1, acc)
+      for (const a of e.agents) {
+        if (a.state === 'Socializing' || a.state === 'Conversing') socialMin.set(a.id, (socialMin.get(a.id) ?? 0) + 1)
+      }
+    }
+    for (const a of e.agents) {
+      expect(socialMin.get(a.id)).toBeGreaterThan(60)
+      expect(Object.keys(a.relationships).length).toBeGreaterThan(0)
+    }
+    expect(e.interactions).toBeGreaterThan(300)
+  })
+  it('a snapshot round-trips the loneliness clock instead of resetting it', () => {
+    const e = new SimEngine(5)
+    const acc = { v: 0 }
+    for (let i = 0; i < 5000; i++) e.step(1, acc)
+    const before = (e.snapshot() as any).lastSocial as Array<[string, number]>
+    expect(before.length).toBe(e.agents.length)
+    const e2 = new SimEngine(9)
+    e2.restore(e.snapshot())
+    const after = (e2.snapshot() as any).lastSocial as Array<[string, number]>
+    expect(after).toEqual(before)
+  })
   it('hunger does not saturate: agents rarely sit at 100 and sleeps rarely end starving', () => {
     // Regression: hunger rose 0.7/min (+1008/day) while a meal only
     // removes 50, so even eating 10 times a day could not keep up — in

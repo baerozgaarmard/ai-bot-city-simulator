@@ -6,7 +6,10 @@ export const WorldSchema = z.object({ agents: z.array(z.any()), memories: z.arra
   // 30-minute window that stops a just-finished pair re-forming.
   // Optional so saves from before these fields still load.
   convPairs: z.array(z.tuple([z.string(), z.string()])).optional(),
-  lastTalk: z.array(z.tuple([z.string(), z.array(z.tuple([z.string(), z.number()]))])).optional() })
+  lastTalk: z.array(z.tuple([z.string(), z.array(z.tuple([z.string(), z.number()]))])).optional(),
+  // When each agent last finished a Socializing activity (simMinutes).
+  // Optional so saves from before this field still load.
+  lastSocial: z.array(z.tuple([z.string(), z.number()])).optional() })
 export type WorldSnapshot = z.infer<typeof WorldSchema>
 class CityDB extends Dexie { worlds!: Table<{ id: string; savedAt: number; data: unknown }, string>; constructor() { super('ai-bot-city'); this.version(1).stores({ worlds: 'id,savedAt' }) } }
 export const db = new CityDB()
