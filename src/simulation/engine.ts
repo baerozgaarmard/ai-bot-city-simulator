@@ -274,6 +274,17 @@ export class SimEngine {
         // agent is actually doing instead of converging on 40.
         if (a.hunger >= 80 || a.energy <= 10) a.mood = Math.max(0, a.mood - 0.2)
         else a.mood = Math.min(100, a.mood + 0.2)
+        // Confidence follows the same rule as mood: it used to only ever
+        // rise (+5 per completed Work, capped at 100) and nothing ever
+        // lowered it, so after ~10k minutes every agent sat at 100
+        // (24/24 in a 30k-minute probe) and the inspector's Confidence %
+        // was a flat, meaningless number — the same dead-stat failure
+        // mood had before its fix. Being very hungry or exhausted now
+        // dents it, and being fed and rested lets it recover, so it
+        // moves with how the agent is actually doing instead of
+        // saturating; the +5 on completing Work still rewards a shift.
+        if (a.hunger >= 80 || a.energy <= 10) a.confidence = Math.max(0, a.confidence - 0.2)
+        else a.confidence = Math.min(100, a.confidence + 0.2)
         const conv = this.conv.get(a.id)
         // A Conversing agent with no conv entry is desynced — this happens
         // after snapshot/restore, because the conv timer map is not part of

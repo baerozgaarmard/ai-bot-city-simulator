@@ -74,6 +74,19 @@ describe('engine', () => {
     const changed = e.agents.filter((a, i) => a.mood !== before[i]).length
     expect(changed).toBeGreaterThan(0)
   })
+  it('confidence does not saturate at 100 for every agent over a long run', () => {
+    // Regression: confidence only ever rose (+5 per completed Work) and
+    // nothing ever lowered it, so by 10k minutes all 24 agents were
+    // pinned at 100 and the stat never moved again. It must fall when
+    // the agent is very hungry or exhausted and recover when fed and
+    // rested, the same rule as mood.
+    const e = new SimEngine(777); const acc = { v: 0 }
+    for (let i = 0; i < 30000; i++) e.step(1, acc)
+    const at100 = e.agents.filter(a => a.confidence >= 100).length
+    expect(at100).toBeLessThan(24)
+    const spread = Math.max(...e.agents.map(a => a.confidence)) - Math.min(...e.agents.map(a => a.confidence))
+    expect(spread).toBeGreaterThan(10)
+  })
   it('memories come from real events and can be retrieved', () => {
     const e = new SimEngine(9); const a = e.agents[0]; const b = e.agents[1]
     ;(e as any).addMemory(a, 'episodic', 'Met Bob at cafe', 8, 1, [b.id], null, 'ev-1', ['social'])
