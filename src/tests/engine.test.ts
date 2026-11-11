@@ -609,8 +609,9 @@ describe('engine', () => {
   })
   it('a full night of sleep restores energy instead of draining it', () => {
     // Regression: Sleeping shared Resting's +40 restore, but a sleep lasts
-    // 120 minutes (vs 60 for a rest) while energy drains 0.4/min, so an
-    // agent that slept the whole night woke up MORE tired (50 -> 42).
+    // 120 minutes (vs 60 for a rest) while energy drained 0.4/min at the
+    // time, so an agent that slept the whole night woke up MORE tired
+    // (50 -> 42).
     const e = new SimEngine(5); const a = e.agents[0]
     a.state = 'Sleeping'; a.path = []; a.dest = null
     a.activityUntil = e.simMinutes + 120; a.cooldownUntil = 0
@@ -833,5 +834,44 @@ describe('engine', () => {
     // (>= 80) catch the imbalance even when nothing hits 100.
     expect(sleepsEndingHungry / sleeps).toBeLessThan(0.5)
     expect(hungerSum / hungerSamples).toBeLessThan(80)
+  })
+  it('energy does not saturate at zero: agents rarely sit exhausted and rests/sleeps rarely end at 0', () => {
+    // Regression: energy drained 0.4/min (+576/day) while recovery is
+    // lump sums — Rest +40, Sleep +80, Eat +10 — so at the observed
+    // frequencies (~4.6 rests, ~3.1 sleeps, ~5.4 meals a day) the city
+    // recovered only ~486/day and the deficit was absorbed by the 0
+    // clamp: in a 30k-minute probe average energy was ~33, 18.5% of
+    // agent-minutes sat at exactly 0 (up to 115 continuous minutes),
+    // 92% of rests and ~29% of sleeps ended at 0 energy, and agents
+    // spent 45% of the day resting or sleeping. At 0.25/min (+360/day)
+    // the same frequencies balance: average energy ~49, ~4.6% of time
+    // at 0, ~3% of sleeps ending at 0. Energy is sampled the minute
+    // before an activity completes, because complete() applies the
+    // lump-sum recovery — sampling after completion would read the
+    // restored value and hide the exhaustion. Thresholds are loose —
+    // they catch a return to saturation, not small drift.
+    const e = new SimEngine(42)
+    const acc = { v: 0 }
+    let zeroMin = 0, energySum = 0, energySamples = 0
+    let rests = 0, restsEndingAt0 = 0, sleeps = 0, sleepsEndingAt0 = 0
+    for (let i = 0; i < 30000; i++) {
+      for (const a of e.agents) {
+        if (a.activityUntil > 0 && a.activityUntil === e.simMinutes + 1) {
+          if (a.state === 'Resting') { rests++; if (a.energy <= 0) restsEndingAt0++ }
+          if (a.state === 'Sleeping') { sleeps++; if (a.energy <= 0) sleepsEndingAt0++ }
+        }
+      }
+      e.step(1, acc)
+      for (const a of e.agents) {
+        if (a.energy <= 0) zeroMin++
+        energySum += a.energy; energySamples++
+      }
+    }
+    const agentMin = 30000 * e.agents.length
+    expect(zeroMin / agentMin).toBeLessThan(0.08)
+    expect(energySum / energySamples).toBeGreaterThan(35)
+    expect(energySum / energySamples).toBeLessThan(65)
+    expect(sleepsEndingAt0 / sleeps).toBeLessThan(0.1)
+    expect(restsEndingAt0 / rests).toBeLessThan(0.65)
   })
 })

@@ -249,7 +249,7 @@ export class SimEngine {
     const loc = LOCATIONS.find(l => l.entrance.x === Math.round(a.pos.x) && l.entrance.y === Math.round(a.pos.y))
     this.completed++; a.recentActions.unshift(`${a.goal} at ${loc?.name ?? 'town'}`); a.recentActions = a.recentActions.slice(0, 5)
     // Recovery stays a lump sum at completion (see step()): Resting +40
-    // and Sleeping +80 are calibrated against the 0.4/min drain, and the
+    // and Sleeping +80 are calibrated against the 0.25/min drain, and the
     // drain clamps at 0 mid-activity, so an exhausted sleeper wakes with
     // more than the nominal net — the day's rhythm (prompt morning
     // meals, rare starving sleeps) is calibrated on those totals.
@@ -264,9 +264,10 @@ export class SimEngine {
     if (a.state === 'Eating') { a.hunger = Math.max(0, a.hunger - 50); a.energy = Math.min(100, a.energy + 10) }
     if (a.state === 'Resting') a.energy = Math.min(100, a.energy + 40)
     // Sleeping must restore more than Resting: a sleep lasts 120 minutes
-    // (vs 60 for a rest) while energy drains 0.4/min, so the old shared
-    // +40 left an agent MORE tired after a full night's sleep (50 -> 42).
-    // +80 nets +32 over the night, the same recovery rate as a rest.
+    // (vs 60 for a rest) while energy drains 0.25/min, so the old shared
+    // +40 left an agent MORE tired after a full night's sleep at the old
+    // 0.4/min drain (50 -> 42). +80 nets +50 over the night, the same
+    // recovery rate as a rest.
     if (a.state === 'Sleeping') a.energy = Math.min(100, a.energy + 80)
     if (a.state === 'Working') a.confidence = Math.min(100, a.confidence + 5)
     // A finished Socializing activity resets the loneliness clock, even
@@ -324,7 +325,24 @@ export class SimEngine {
         // (+288/day) the same meal frequency removes ~291/day, so the
         // economy balances and hunger settles in the middle of the
         // range instead of pinned near the top.
-        a.energy = Math.max(0, a.energy - 0.4); a.hunger = Math.min(100, a.hunger + 0.2)
+        // Energy drains 0.25/min, not 0.4: the 0.4 rate (+576/day)
+        // never balanced against the lump-sum recovery — a rest
+        // returns +40, a sleep +80, a meal +10, and at the observed
+        // frequencies (~4.6 rests, ~3.1 sleeps, ~5.4 meals a day) the
+        // city recovered only ~486/day. The deficit could only be
+        // absorbed by the 0 clamp, so agents lived exhausted: average
+        // energy ~33, 18.5% of agent-minutes at exactly 0 (up to 115
+        // continuous minutes), 92% of rests and ~29% of sleeps ending
+        // at 0 energy, and 45% of the day spent resting or sleeping —
+        // the same unbalanced-economy failure hunger had before its
+        // fix. At 0.25/min (+360/day) the same frequencies balance:
+        // average energy ~49, ~4.6% of time at 0, ~3% of sleeps
+        // ending at 0, and agents work ~22% of the day instead of
+        // ~17%. Rests are still picked when energy is low and the
+        // recovery lands as a lump sum at completion, so about half
+        // of rests still read 0 in their final minute — the +40
+        // arrives with the completion, not during the rest.
+        a.energy = Math.max(0, a.energy - 0.25); a.hunger = Math.min(100, a.hunger + 0.2)
         // Mood responds to how the agent feels: being very hungry or
         // exhausted drags it down, and being fed and rested lets it
         // recover. The recovery used to fire only below 40, so mood could
