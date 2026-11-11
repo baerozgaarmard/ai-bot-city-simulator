@@ -311,14 +311,20 @@ export class SimEngine {
       accumulated.v -= 60; this.tick++; this.simMinutes++
       for (const a of this.agents) {
         if (a.paused) continue
-        // Hunger rises 0.25/min, not 0.7: at 0.7 it climbed +1008/day
-        // while a meal only removes 50, so even eating 10 times a day
-        // could not keep up — agents spent ~49% of their lives pinned
-        // at hunger 100, 98.5% of sleeps ended starving, and the hunger
-        // stat sat at max instead of varying. At 0.25 (+360/day) a meal
-        // every few hours balances: ~3% of time at 100, ~2% of sleeps
-        // ending starving, meals ~7/agent/day.
-        a.energy = Math.max(0, a.energy - 0.4); a.hunger = Math.min(100, a.hunger + 0.25)
+        // Hunger rises 0.2/min, not 0.25: the 0.25 rate (+360/day) never
+        // balanced against meals — a 30-minute meal removes 50 but the
+        // agent keeps getting hungrier for those 30 minutes (+7.5), so
+        // each meal nets only -42.5, and at the observed ~6.8 meals/day
+        // the city removed ~291/day against a +360/day drain. The
+        // deficit could only be absorbed by the 100 cap, so agents lived
+        // chronically hungry: average hunger ~83, 27% of agent-minutes
+        // at hunger >= 80, 84% of sleeps ending at hunger >= 80 (8% at
+        // exactly 100, vs the ~2% the 0.25 fix claimed), and mood below
+        // 50 half the time because hunger >= 80 drains it. At 0.2/min
+        // (+288/day) the same meal frequency removes ~291/day, so the
+        // economy balances and hunger settles in the middle of the
+        // range instead of pinned near the top.
+        a.energy = Math.max(0, a.energy - 0.4); a.hunger = Math.min(100, a.hunger + 0.2)
         // Mood responds to how the agent feels: being very hungry or
         // exhausted drags it down, and being fed and rested lets it
         // recover. The recovery used to fire only below 40, so mood could

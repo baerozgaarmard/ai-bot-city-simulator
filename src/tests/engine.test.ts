@@ -796,25 +796,42 @@ describe('engine', () => {
     // a 30k-minute probe agents spent ~49% of their lives pinned at
     // hunger 100 and 98.5% of sleeps ended starving, so the hunger stat
     // was meaningless. The +40 Eat bonus at hunger >= 80 only treated
-    // the extreme; the drain itself outran every meal. At 0.25/min the
-    // same probe shows ~3% of time at 100 and ~2% of sleeps ending
-    // starving. Thresholds are loose (this probe drives step(1), so
-    // walks take 3x longer than in real-time play and meals arrive
-    // late) — they catch a return to saturation, not small drift.
+    // the extreme; the drain itself outran every meal. The 0.25/min
+    // fix repeated the same arithmetic error: +360/day against meals
+    // that net only -42.5 each (a meal removes 50 but hunger still
+    // rises +7.5 during the 30 minutes spent eating), so at the
+    // observed ~6.8 meals/day the city removed ~291/day and the
+    // deficit was absorbed by the 100 cap — average hunger ~83, 27%
+    // of agent-minutes at hunger >= 80, 84% of sleeps ending hungry
+    // and mood below 50 half the time. At 0.2/min (+288/day) the same
+    // meal frequency balances: ~2.3% of time at 100, ~6% of sleeps
+    // ending at 100, ~38% ending at hunger >= 80, average hunger ~70.
+    // Thresholds are loose (this probe drives step(1), so walks take
+    // 3x longer than in real-time play and meals arrive late) — they
+    // catch a return to saturation, not small drift.
     const e = new SimEngine(11)
     const acc = { v: 0 }
-    let hunger100Min = 0, sleeps = 0, sleepsEndingAt100 = 0
+    let hunger100Min = 0, sleeps = 0, sleepsEndingAt100 = 0, sleepsEndingHungry = 0, hungerSum = 0, hungerSamples = 0
     for (let i = 0; i < 30000; i++) {
       const before = new Map(e.agents.map(a => [a.id, a.state]))
       e.step(1, acc)
       for (const a of e.agents) {
         if (a.hunger >= 100) hunger100Min++
+        hungerSum += a.hunger; hungerSamples++
         if (before.get(a.id) !== 'Sleeping' && a.state === 'Sleeping') sleeps++
-        if (before.get(a.id) === 'Sleeping' && a.state !== 'Sleeping' && a.hunger >= 100) sleepsEndingAt100++
+        if (before.get(a.id) === 'Sleeping' && a.state !== 'Sleeping') {
+          if (a.hunger >= 100) sleepsEndingAt100++
+          if (a.hunger >= 80) sleepsEndingHungry++
+        }
       }
     }
     const agentMin = 30000 * e.agents.length
-    expect(hunger100Min / agentMin).toBeLessThan(0.1)
-    expect(sleepsEndingAt100 / sleeps).toBeLessThan(0.1)
+    expect(hunger100Min / agentMin).toBeLessThan(0.05)
+    expect(sleepsEndingAt100 / sleeps).toBeLessThan(0.08)
+    // The cap metrics alone miss a city that lives hungry without
+    // pinning: average hunger and the share of sleeps ending hungry
+    // (>= 80) catch the imbalance even when nothing hits 100.
+    expect(sleepsEndingHungry / sleeps).toBeLessThan(0.5)
+    expect(hungerSum / hungerSamples).toBeLessThan(80)
   })
 })
