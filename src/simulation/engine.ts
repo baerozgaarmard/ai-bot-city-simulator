@@ -190,7 +190,23 @@ export class SimEngine {
     // Socialize scales with sociability (24-76), so curious agents shop
     // in their spare hours without it outbidding work, meals or sleep.
     candidates.push(['Shop', this.locById('shop'), 'Shopping', 'Shopping', 25, a.personality.curiosity * 0.8])
-    candidates.push(['Commute', this.locById('bus'), 'Commuting', 'Waiting for the bus', 15, hour === 8 || hour === 17 ? 45 : 5])
+    // Commute used to score a flat 45 at rush hour (8 and 17) and 5
+    // otherwise, below almost every competing utility in its own
+    // window — a morning meal scores hunger * 1.2, typically 48-84
+    // after a night's sleep, and Socialize, Shop and Rest all clear 45
+    // in their usual states — so it could only win for an agent that
+    // happened to be fed, rested and unsociable at exactly 8 or 17:
+    // 30-38 trips per 30k minutes across the whole city, vs ~3,400
+    // meals and ~1,500 work shifts, and 20 of 24 agents never
+    // commuted once in 21 sim-days, including Ian the Bus Driver and
+    // Sam the Courier, whose workplace is the bus stop itself. The bus
+    // stop was effectively decorative, the same dead-goal failure Shop
+    // had before its fix. It now scales with routine the way Work does
+    // (45 + routine * 0.3, 52.5-73.5 at rush hour), so routine agents
+    // commute when they are fed and rested, without outbidding a meal
+    // for a hungry agent (Eat reaches 96 + 40 at hunger 80) or sleep
+    // and rest when the agent is tired.
+    candidates.push(['Commute', this.locById('bus'), 'Commuting', 'Waiting for the bus', 15, hour === 8 || hour === 17 ? 45 + a.personality.routine * 0.3 : 5])
     candidates.sort((x, y) => y[5] - x[5])
     const [goal, loc, state, activity, dur] = candidates[0]
     this.setGoal(a, goal, loc, state, activity, dur)

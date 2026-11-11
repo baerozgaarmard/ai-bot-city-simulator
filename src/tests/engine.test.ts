@@ -717,6 +717,39 @@ describe('engine', () => {
     expect(shopMin / agentMin).toBeLessThan(0.1)
     expect(trips).toBeGreaterThan(100)
   })
+  it('agents commute sometimes instead of never waiting for the bus', () => {
+    // Regression: Commute scored a flat 45 at rush hour (8 and 17) and
+    // 5 otherwise, below almost every competing utility in its own
+    // window — a morning meal scores hunger * 1.2, typically 48-84
+    // after a night's sleep — so it could only win for an agent that
+    // happened to be fed, rested and unsociable at exactly 8 or 17:
+    // 30-38 trips per 30k minutes across the whole city, vs ~3,400
+    // meals, and 20 of 24 agents never commuted once in 21 sim-days,
+    // including Ian the Bus Driver and Sam the Courier, whose
+    // workplace is the bus stop itself. It now scales with routine
+    // the way Work does (45 + routine * 0.3 at rush hour), so routine
+    // agents commute when fed and rested: ~340-380 trips per 30k
+    // minutes, with 17 of 24 agents commuting at least once.
+    // Thresholds are loose — they catch a return to a dead goal, not
+    // small drift.
+    const e = new SimEngine(1)
+    const acc = { v: 0 }
+    let commuteMin = 0, trips = 0
+    const commuters = new Set<string>()
+    for (let i = 0; i < 30000; i++) {
+      const before = new Map(e.agents.map(a => [a.id, a.state]))
+      e.step(1, acc)
+      for (const a of e.agents) {
+        if (a.state === 'Commuting') commuteMin++
+        if (before.get(a.id) !== 'Commuting' && a.state === 'Commuting') { trips++; commuters.add(a.id) }
+      }
+    }
+    const agentMin = 30000 * e.agents.length
+    expect(commuteMin / agentMin).toBeGreaterThan(0.002)
+    expect(commuteMin / agentMin).toBeLessThan(0.05)
+    expect(trips).toBeGreaterThan(100)
+    expect(commuters.size).toBeGreaterThan(10)
+  })
   it('lonely agents eventually socialize instead of never talking to anyone', () => {
     // Regression: Socialize's fixed utility always lost to a higher
     // fixed one in spare time — Shop (curiosity * 0.8, up to 76) beat
