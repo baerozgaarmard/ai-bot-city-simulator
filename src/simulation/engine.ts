@@ -355,17 +355,29 @@ export class SimEngine {
         // agent is actually doing instead of converging on 40.
         if (a.hunger >= 80 || a.energy <= 10) a.mood = Math.max(0, a.mood - 0.2)
         else a.mood = Math.min(100, a.mood + 0.2)
-        // Confidence follows the same rule as mood: it used to only ever
-        // rise (+5 per completed Work, capped at 100) and nothing ever
-        // lowered it, so after ~10k minutes every agent sat at 100
-        // (24/24 in a 30k-minute probe) and the inspector's Confidence %
-        // was a flat, meaningless number — the same dead-stat failure
-        // mood had before its fix. Being very hungry or exhausted now
-        // dents it, and being fed and rested lets it recover, so it
-        // moves with how the agent is actually doing instead of
-        // saturating; the +5 on completing Work still rewards a shift.
-        if (a.hunger >= 80 || a.energy <= 10) a.confidence = Math.max(0, a.confidence - 0.2)
-        else a.confidence = Math.min(100, a.confidence + 0.2)
+        // Confidence follows the same trigger as mood — being very hungry
+        // or exhausted dents it, being fed and rested lets it recover —
+        // but on its own scale, not mood's ±0.2. It used to share mood's
+        // exact updates, so the two stats were the same number: once
+        // either hit the 100 cap they locked together permanently, and
+        // in a 30k-minute probe on four seeds mood and confidence were
+        // exactly equal for 76-77% of agent-minutes, all 24 agents
+        // ending the run with identical values on every seed. The
+        // inspector showed two stats that were one number, and the +5
+        // per completed Work was erased at the cap the moment it would
+        // have opened a gap. The rates are set from the measured
+        // balance, not copied from mood: bad minutes (hunger >= 80 or
+        // energy <= 10) are ~27% of agent-minutes, Work adds ~+0.01/min
+        // averaged out, so a -0.3 dent against a +0.1 recovery nets
+        // about zero — confidence wanders with what the agent is doing
+        // instead of ratcheting to the cap the way mood does (mood's
+        // symmetric ±0.2 nets about +0.09/min, which is why it sits at
+        // exactly 100 for ~45% of agent-minutes). Mood falls twice as
+        // fast as confidence recovers and confidence dents 50% faster
+        // than mood, so the two trajectories separate on every stretch
+        // instead of tracking tick-for-tick.
+        if (a.hunger >= 80 || a.energy <= 10) a.confidence = Math.max(0, a.confidence - 0.3)
+        else a.confidence = Math.min(100, a.confidence + 0.1)
         const conv = this.conv.get(a.id)
         // A Conversing agent with no conv entry is desynced — this happens
         // after snapshot/restore, because the conv timer map is not part of

@@ -87,6 +87,26 @@ describe('engine', () => {
     const spread = Math.max(...e.agents.map(a => a.confidence)) - Math.min(...e.agents.map(a => a.confidence))
     expect(spread).toBeGreaterThan(10)
   })
+  it('mood and confidence are different stats, not the same number', () => {
+    // Regression: mood and confidence received byte-identical per-minute
+    // updates (±0.2 on the same hunger/energy trigger, same 0-100
+    // clamp), so once either hit the 100 cap they locked together
+    // permanently — in a 30k-minute probe on four seeds the two values
+    // were exactly equal for 76-77% of agent-minutes, and all 24 agents
+    // ended the run with identical mood and confidence on every seed.
+    // The inspector showed two stats that were one number, and
+    // confidence's +5 per completed Work was erased at the cap the
+    // moment it would have opened a gap. Confidence now moves on its
+    // own scale (-0.3 dent, +0.1 recovery), so the two differ for
+    // nearly every agent and confidence sits mid-range instead of
+    // pinned at 100 (measured: 21-24/24 differ, 0-3/24 at 100).
+    const e = new SimEngine(777); const acc = { v: 0 }
+    for (let i = 0; i < 30000; i++) e.step(1, acc)
+    const differ = e.agents.filter(a => Math.abs(a.mood - a.confidence) > 0.01).length
+    expect(differ).toBeGreaterThan(12)
+    const confAt100 = e.agents.filter(a => a.confidence >= 100).length
+    expect(confAt100).toBeLessThan(12)
+  })
   it('memories come from real events and can be retrieved', () => {
     const e = new SimEngine(9); const a = e.agents[0]; const b = e.agents[1]
     ;(e as any).addMemory(a, 'episodic', 'Met Bob at cafe', 8, 1, [b.id], null, 'ev-1', ['social'])
