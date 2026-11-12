@@ -9,7 +9,10 @@ export const WorldSchema = z.object({ agents: z.array(z.any()), memories: z.arra
   lastTalk: z.array(z.tuple([z.string(), z.array(z.tuple([z.string(), z.number()]))])).optional(),
   // When each agent last finished a Socializing activity (simMinutes).
   // Optional so saves from before this field still load.
-  lastSocial: z.array(z.tuple([z.string(), z.number()])).optional() })
+  lastSocial: z.array(z.tuple([z.string(), z.number()])).optional(),
+  // When each agent last finished a Shopping activity (simMinutes).
+  // Optional so saves from before this field still load.
+  lastShop: z.array(z.tuple([z.string(), z.number()])).optional() })
 export type WorldSnapshot = z.infer<typeof WorldSchema>
 class CityDB extends Dexie { worlds!: Table<{ id: string; savedAt: number; data: unknown }, string>; constructor() { super('ai-bot-city'); this.version(1).stores({ worlds: 'id,savedAt' }) } }
 export const db = new CityDB()

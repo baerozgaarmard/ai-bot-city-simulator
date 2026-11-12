@@ -60,6 +60,25 @@ export class SimEngine {
   // steady state it stays low and never outbids work, meals or sleep
   // the way a flat base would.
   private lastSocial = new Map<string, number>()
+  // When each agent last finished a Shopping activity, on the
+  // simMinutes timeline. Shop used to score a flat curiosity * 0.8
+  // (24-76), and Socialize's floor is sociability * 0.8 before its
+  // mood and loneliness bonuses — so for every agent whose
+  // sociability exceeds their curiosity, Socialize outbid Shop in
+  // every spare hour and Shop could never win at all, not just
+  // rarely: on two seeds the same 10 of 24 agents (Bob, Ethan,
+  // George, Ian, Leo, Mia, Olivia, Peter, Rosa, Sam) never shopped
+  // once in 30k minutes, exactly the agents with sociability >
+  // curiosity, while the other 14 shopped 4-66 times each. The
+  // Corner Shop was decorative for nearly half the city. Shop now
+  // gains the same kind of time-based bonus Socialize has: +1/hour
+  // since the agent last finished shopping, capped at 30 — enough
+  // for the worst case (Mia: base 48 must clear Socialize's 68
+  // floor) without outbidding a meal at critical hunger (136) or a
+  // night's sleep (90+), and it self-limits the way the loneliness
+  // bonus does: once the bonus is big enough to win a spare hour,
+  // the agent shops and the clock resets.
+  private lastShop = new Map<string, number>()
   // One no-repeat expiry per (agent, ex-partner) pair, not one per
   // agent: the old single-slot map kept only each agent's MOST RECENT
   // ex-partner, so one intervening conversation with anyone else
@@ -141,6 +160,7 @@ export class SimEngine {
     // socialized", so without this the bonus stayed 0 forever for the
     // very agents it was meant to rescue).
     for (const a of this.agents) this.lastSocial.set(a.id, this.simMinutes)
+    for (const a of this.agents) this.lastShop.set(a.id, this.simMinutes)
   }
   private locById(id: string) { return LOCATIONS.find(l => l.id === id)! }
   private talkedRecently(aId: string, bId: string) {
@@ -188,8 +208,13 @@ export class SimEngine {
     // the whole city, vs ~3,300 meals, and the Corner Shop was
     // effectively decorative. It now scales with curiosity the way
     // Socialize scales with sociability (24-76), so curious agents shop
-    // in their spare hours without it outbidding work, meals or sleep.
-    candidates.push(['Shop', this.locById('shop'), 'Shopping', 'Shopping', 25, a.personality.curiosity * 0.8])
+    // in their spare hours without it outbidding work, meals or sleep —
+    // plus the time-since-last-shop bonus (see lastShop): the flat
+    // scaling alone left Shop mathematically unwinnable for the 10
+    // agents whose sociability exceeds their curiosity, because
+    // Socialize's floor (sociability * 0.8, before its own bonuses)
+    // already beats Shop's maximum for them.
+    candidates.push(['Shop', this.locById('shop'), 'Shopping', 'Shopping', 25, a.personality.curiosity * 0.8 + Math.min(30, (this.simMinutes - (this.lastShop.get(a.id) ?? this.simMinutes)) / 60)])
     // Commute used to score a flat 45 at rush hour (8 and 17) and 5
     // otherwise, below almost every competing utility in its own
     // window — a morning meal scores hunger * 1.2, typically 48-84
@@ -286,6 +311,11 @@ export class SimEngine {
     // Socialize utility stayed inflated, sending it straight back out
     // after the cooldown instead of moving on.
     if (a.goal === 'Socialize') this.lastSocial.set(a.id, this.simMinutes)
+    // A finished Shopping activity resets the shopping clock, the same
+    // way a finished Socializing activity resets the loneliness clock:
+    // without this the bonus would keep stacking after every trip and
+    // send the agent straight back to the shop instead of moving on.
+    if (a.goal === 'Shop') this.lastShop.set(a.id, this.simMinutes)
     this.log('GOAL', a, loc ?? null, `${a.name} completed ${a.goal.toLowerCase()}.`)
     a.cooldownUntil = this.simMinutes + 2; a.state = 'Idle'; a.activity = 'Deciding what to do next'; a.dest = null; a.path = []; a.activityUntil = 0; (a as any)._target = undefined
   }
@@ -477,6 +507,7 @@ export class SimEngine {
     const loc = this.locById(input.locationId)
     const a: Agent = { id: nid('agent'), name: input.name, role: input.role, color: pick(this.rng, COLORS), personality: input.personality, pos: { ...loc.entrance }, dest: null, path: [], state: 'Idle', activity: 'Arriving', goal: 'Settle in', intention: 'Settle in', thought: 'New in Smallville.', energy: input.energy, hunger: 20, mood: input.mood, sociability: input.personality.sociability, confidence: 60, home: 'residential', workplace: 'office', paused: false, activityUntil: 0, cooldownUntil: 0, relationships: {}, recentActions: [] }
     this.lastSocial.set(a.id, this.simMinutes)
+    this.lastShop.set(a.id, this.simMinutes)
     this.agents.push(a); this.log('SYSTEM', a, loc, `${a.name} joined Smallville as ${a.role}.`); return a
   }
   setSociability(id: string, value: number) {
@@ -541,13 +572,18 @@ export class SimEngine {
     // socialized", maxing the Socialize bonus for the whole city at once
     // and sending everyone to the park/cafe instead of work.
     const lastSocial = [...this.lastSocial]
+    // Same clock as lastSocial, for shopping: without it a load reset
+    // every agent to "never shopped", maxing the Shop bonus for the
+    // whole city at once and sending everyone to the Corner Shop
+    // instead of work.
+    const lastShop = [...this.lastShop]
     // Same retention rule as log(): the snapshot keeps the newest 200
     // events, which used to drop every source event a saved memory
     // links to — a load left 100% of memories dangling (222/222 in a
     // 20k-minute probe). Keep referenced events alongside the newest 200.
     const referenced = new Set(this.memories.map(m => m.sourceEventId))
     const events = this.events.filter((ev, i) => i < 200 || referenced.has(ev.id))
-    return JSON.parse(JSON.stringify({ agents: this.agents, memories: this.memories, events, tick: this.tick, simMinutes: this.simMinutes, seed: this.seed, completed: this.completed, interactions: this.interactions, convPairs, lastTalk, lastSocial }))
+    return JSON.parse(JSON.stringify({ agents: this.agents, memories: this.memories, events, tick: this.tick, simMinutes: this.simMinutes, seed: this.seed, completed: this.completed, interactions: this.interactions, convPairs, lastTalk, lastSocial, lastShop }))
   }
   restore(s: any) {
     this.agents = s.agents; this.memories = s.memories; this.events = s.events; this.tick = s.tick; this.simMinutes = s.simMinutes; this.completed = s.completed; this.interactions = s.interactions
@@ -602,6 +638,18 @@ export class SimEngine {
     // start their clock at the load, not at "never socialized", so the
     // load does not max everyone's bonus at once (see snapshot()).
     for (const a of this.agents) if (!this.lastSocial.has(a.id)) this.lastSocial.set(a.id, this.simMinutes)
+    // Restore the shopping clock from the snapshot, with the same
+    // validation as the loneliness clock: timestamps on the restored
+    // timeline only, and agents with no entry start at the load, not
+    // at "never shopped", so a load never triggers a city-wide rush
+    // to the Corner Shop.
+    this.lastShop.clear()
+    if (Array.isArray(s.lastShop)) {
+      for (const [id, at] of s.lastShop) {
+        if (typeof id === 'string' && typeof at === 'number' && at <= this.simMinutes) this.lastShop.set(id, at)
+      }
+    }
+    for (const a of this.agents) if (!this.lastShop.has(a.id)) this.lastShop.set(a.id, this.simMinutes)
     // the guard releases both on the next tick — so treat the load as
     // the moment they split: give them the same 30-minute no-repeat
     // window a natural release sets. Without this the pair could

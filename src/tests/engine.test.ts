@@ -738,6 +738,52 @@ describe('engine', () => {
     expect(shopMin / agentMin).toBeLessThan(0.1)
     expect(trips).toBeGreaterThan(100)
   })
+  it('every agent shops sometimes, not just the curious ones', () => {
+    // Regression: the curiosity scaling above fixed Shop city-wide
+    // (~550 trips per 30k minutes) but left it mathematically
+    // unwinnable for the 10 agents whose sociability exceeds their
+    // curiosity — Socialize's floor (sociability * 0.8, before its
+    // mood and loneliness bonuses) already beats Shop's maximum
+    // (curiosity * 0.8) for them, so Shop could never be the highest
+    // utility, not just rarely: on two seeds the same 10 agents (Bob,
+    // Ethan, George, Ian, Leo, Mia, Olivia, Peter, Rosa, Sam) never
+    // shopped once in 30k minutes, exactly the agents with
+    // sociability > curiosity, while the other 14 shopped 4-66 times
+    // each. Shop now gains +1/hour since the agent last finished
+    // shopping (capped at 30), the same time-based bonus Socialize
+    // has, so every agent eventually shops in a spare hour — and the
+    // bonus only lifts Shop when it has been starved, so it must not
+    // let shopping crowd out work. Thresholds are loose — they catch
+    // a return to a dead goal, not small drift.
+    for (const seed of [11, 42]) {
+      const e = new SimEngine(seed)
+      const acc = { v: 0 }
+      const shopMin = new Map(e.agents.map(a => [a.id, 0]))
+      const workMin = new Map(e.agents.map(a => [a.id, 0]))
+      for (let i = 0; i < 30000; i++) {
+        e.step(1, acc)
+        for (const a of e.agents) {
+          if (a.state === 'Shopping') shopMin.set(a.id, (shopMin.get(a.id) ?? 0) + 1)
+          if (a.state === 'Working') workMin.set(a.id, (workMin.get(a.id) ?? 0) + 1)
+        }
+      }
+      for (const a of e.agents) {
+        expect(shopMin.get(a.id)).toBeGreaterThan(0)
+        expect(workMin.get(a.id)).toBeGreaterThan(1000)
+      }
+    }
+  })
+  it('a snapshot round-trips the shopping clock instead of resetting it', () => {
+    const e = new SimEngine(5)
+    const acc = { v: 0 }
+    for (let i = 0; i < 5000; i++) e.step(1, acc)
+    const before = (e.snapshot() as any).lastShop as Array<[string, number]>
+    expect(before.length).toBe(e.agents.length)
+    const e2 = new SimEngine(9)
+    e2.restore(e.snapshot())
+    const after = (e2.snapshot() as any).lastShop as Array<[string, number]>
+    expect(after).toEqual(before)
+  })
   it('agents commute sometimes instead of never waiting for the bus', () => {
     // Regression: Commute scored a flat 45 at rush hour (8 and 17) and
     // 5 otherwise, below almost every competing utility in its own
