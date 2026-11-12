@@ -797,7 +797,11 @@ describe('engine', () => {
     // the way Work does (45 + routine * 0.3 at rush hour), so routine
     // agents commute when fed and rested: ~340-380 trips per 30k
     // minutes, with 17 of 24 agents commuting at least once.
-    // Thresholds are loose — they catch a return to a dead goal, not
+    // Follow-on: the routine scaling alone left Commute mathematically
+    // unwinnable for the 7 agents whose Shop or Socialize floor beats
+    // its maximum (see 'every agent commutes sometimes' below), so
+    // the city-wide rate hid a dead goal for nearly a third of the
+    // city. Thresholds are loose — they catch a return to a dead goal, not
     // small drift.
     const e = new SimEngine(1)
     const acc = { v: 0 }
@@ -816,6 +820,52 @@ describe('engine', () => {
     expect(commuteMin / agentMin).toBeLessThan(0.05)
     expect(trips).toBeGreaterThan(100)
     expect(commuters.size).toBeGreaterThan(10)
+  })
+  it('every agent commutes sometimes, not just the routine ones', () => {
+    // Regression: the routine scaling above fixed Commute city-wide
+    // (~340-380 trips per 30k minutes) but left it mathematically
+    // unwinnable for the 7 agents whose Shop or Socialize floor already
+    // beats its maximum — Shop's floor (curiosity * 0.8) for Charlie
+    // (72), Diana (76), Kayla (72), Quinn (76), Tara (72) and Yusuf
+    // (68) against Commute maxima of 52.5-60, and Socialize's floor
+    // (sociability * 0.8) for Mia (68 against her Commute maximum of
+    // 66) — so on three seeds those same 7 agents spent exactly 0
+    // minutes Commuting in 30k minutes each, while the other 17
+    // commuted 100-750 minutes each. Commute now gains +1/hour since
+    // the agent last finished commuting (capped at 30, rush hour
+    // only), the same time-based bonus Shop has, so every agent
+    // eventually catches the bus in a spare rush hour — and the bonus
+    // only lifts Commute when it has been starved, so it must not let
+    // commuting crowd out work. Thresholds are loose — they catch a
+    // return to a dead goal, not small drift.
+    for (const seed of [11, 42]) {
+      const e = new SimEngine(seed)
+      const acc = { v: 0 }
+      const commuteMin = new Map(e.agents.map(a => [a.id, 0]))
+      const workMin = new Map(e.agents.map(a => [a.id, 0]))
+      for (let i = 0; i < 30000; i++) {
+        e.step(1, acc)
+        for (const a of e.agents) {
+          if (a.state === 'Commuting') commuteMin.set(a.id, (commuteMin.get(a.id) ?? 0) + 1)
+          if (a.state === 'Working') workMin.set(a.id, (workMin.get(a.id) ?? 0) + 1)
+        }
+      }
+      for (const a of e.agents) {
+        expect(commuteMin.get(a.id)).toBeGreaterThan(0)
+        expect(workMin.get(a.id)).toBeGreaterThan(1000)
+      }
+    }
+  })
+  it('a snapshot round-trips the commuting clock instead of resetting it', () => {
+    const e = new SimEngine(5)
+    const acc = { v: 0 }
+    for (let i = 0; i < 5000; i++) e.step(1, acc)
+    const before = (e.snapshot() as any).lastCommute as Array<[string, number]>
+    expect(before.length).toBe(e.agents.length)
+    const e2 = new SimEngine(9)
+    e2.restore(e.snapshot())
+    const after = (e2.snapshot() as any).lastCommute as Array<[string, number]>
+    expect(after).toEqual(before)
   })
   it('lonely agents eventually socialize instead of never talking to anyone', () => {
     // Regression: Socialize's fixed utility always lost to a higher

@@ -79,6 +79,30 @@ export class SimEngine {
   // bonus does: once the bonus is big enough to win a spare hour,
   // the agent shops and the clock resets.
   private lastShop = new Map<string, number>()
+  // When each agent last finished a Commuting activity, on the
+  // simMinutes timeline. Commute used to score a flat 45 + routine *
+  // 0.3 at rush hour (52.5-73.5), which fixed it city-wide (~340-380
+  // trips per 30k minutes) but left it mathematically unwinnable for
+  // the 7 agents whose Shop or Socialize floor already beats that
+  // maximum — Shop's floor (curiosity * 0.8) for the curious ones
+  // (Charlie 72, Diana 76, Kayla 72, Quinn 76, Tara 72, Yusuf 68)
+  // and Socialize's floor (sociability * 0.8) for Mia (68 vs her
+  // Commute maximum of 66) — so on three seeds those same 7 agents
+  // spent exactly 0 minutes Commuting in 30k minutes each, while the
+  // other 17 commuted 100-750 minutes each: the bus stop was
+  // decorative for nearly a third of the city, the same dead-goal
+  // failure Shop had before its fix. Commute now gains the same kind
+  // of time-based bonus Shop has: +1/hour since the agent last
+  // finished commuting, capped at 30 — enough for the worst case
+  // (Quinn: base 55.5 must clear Shop's 76 floor) without outbidding
+  // a meal at critical hunger (136), a night's sleep (90+) or a rest
+  // when exhausted (up to 110), and it self-limits the way the
+  // loneliness and shopping bonuses do: once the bonus is big enough
+  // to win a rush hour, the agent commutes and the clock resets.
+  // The bonus applies at rush hour only: off-hours the base is 5,
+  // and 5 + 30 could otherwise beat Socialize for the least sociable
+  // agents and send them to the bus stop at 3am.
+  private lastCommute = new Map<string, number>()
   // One no-repeat expiry per (agent, ex-partner) pair, not one per
   // agent: the old single-slot map kept only each agent's MOST RECENT
   // ex-partner, so one intervening conversation with anyone else
@@ -161,6 +185,7 @@ export class SimEngine {
     // very agents it was meant to rescue).
     for (const a of this.agents) this.lastSocial.set(a.id, this.simMinutes)
     for (const a of this.agents) this.lastShop.set(a.id, this.simMinutes)
+    for (const a of this.agents) this.lastCommute.set(a.id, this.simMinutes)
   }
   private locById(id: string) { return LOCATIONS.find(l => l.id === id)! }
   private talkedRecently(aId: string, bId: string) {
@@ -230,8 +255,11 @@ export class SimEngine {
     // (45 + routine * 0.3, 52.5-73.5 at rush hour), so routine agents
     // commute when they are fed and rested, without outbidding a meal
     // for a hungry agent (Eat reaches 96 + 40 at hunger 80) or sleep
-    // and rest when the agent is tired.
-    candidates.push(['Commute', this.locById('bus'), 'Commuting', 'Waiting for the bus', 15, hour === 8 || hour === 17 ? 45 + a.personality.routine * 0.3 : 5])
+    // and rest when the agent is tired — plus the time-since-last-
+    // commute bonus (see lastCommute): the routine scaling alone left
+    // Commute mathematically unwinnable for the 7 agents whose Shop
+    // or Socialize floor already beats its maximum.
+    candidates.push(['Commute', this.locById('bus'), 'Commuting', 'Waiting for the bus', 15, hour === 8 || hour === 17 ? 45 + a.personality.routine * 0.3 + Math.min(30, (this.simMinutes - (this.lastCommute.get(a.id) ?? this.simMinutes)) / 60) : 5])
     candidates.sort((x, y) => y[5] - x[5])
     const [goal, loc, state, activity, dur] = candidates[0]
     this.setGoal(a, goal, loc, state, activity, dur)
@@ -316,6 +344,12 @@ export class SimEngine {
     // without this the bonus would keep stacking after every trip and
     // send the agent straight back to the shop instead of moving on.
     if (a.goal === 'Shop') this.lastShop.set(a.id, this.simMinutes)
+    // A finished Commuting activity resets the commuting clock, the same
+    // way a finished Shopping activity resets the shopping clock:
+    // without this the bonus would keep stacking after every trip and
+    // send the agent straight back to the bus stop at the next rush
+    // hour instead of moving on.
+    if (a.goal === 'Commute') this.lastCommute.set(a.id, this.simMinutes)
     this.log('GOAL', a, loc ?? null, `${a.name} completed ${a.goal.toLowerCase()}.`)
     a.cooldownUntil = this.simMinutes + 2; a.state = 'Idle'; a.activity = 'Deciding what to do next'; a.dest = null; a.path = []; a.activityUntil = 0; (a as any)._target = undefined
   }
@@ -508,6 +542,7 @@ export class SimEngine {
     const a: Agent = { id: nid('agent'), name: input.name, role: input.role, color: pick(this.rng, COLORS), personality: input.personality, pos: { ...loc.entrance }, dest: null, path: [], state: 'Idle', activity: 'Arriving', goal: 'Settle in', intention: 'Settle in', thought: 'New in Smallville.', energy: input.energy, hunger: 20, mood: input.mood, sociability: input.personality.sociability, confidence: 60, home: 'residential', workplace: 'office', paused: false, activityUntil: 0, cooldownUntil: 0, relationships: {}, recentActions: [] }
     this.lastSocial.set(a.id, this.simMinutes)
     this.lastShop.set(a.id, this.simMinutes)
+    this.lastCommute.set(a.id, this.simMinutes)
     this.agents.push(a); this.log('SYSTEM', a, loc, `${a.name} joined Smallville as ${a.role}.`); return a
   }
   setSociability(id: string, value: number) {
@@ -577,13 +612,18 @@ export class SimEngine {
     // whole city at once and sending everyone to the Corner Shop
     // instead of work.
     const lastShop = [...this.lastShop]
+    // Same clock as lastShop, for commuting: without it a load reset
+    // every agent to "never commuted", maxing the Commute bonus for
+    // the whole city at once and sending everyone to the bus stop at
+    // the next rush hour instead of work.
+    const lastCommute = [...this.lastCommute]
     // Same retention rule as log(): the snapshot keeps the newest 200
     // events, which used to drop every source event a saved memory
     // links to — a load left 100% of memories dangling (222/222 in a
     // 20k-minute probe). Keep referenced events alongside the newest 200.
     const referenced = new Set(this.memories.map(m => m.sourceEventId))
     const events = this.events.filter((ev, i) => i < 200 || referenced.has(ev.id))
-    return JSON.parse(JSON.stringify({ agents: this.agents, memories: this.memories, events, tick: this.tick, simMinutes: this.simMinutes, seed: this.seed, completed: this.completed, interactions: this.interactions, convPairs, lastTalk, lastSocial, lastShop }))
+    return JSON.parse(JSON.stringify({ agents: this.agents, memories: this.memories, events, tick: this.tick, simMinutes: this.simMinutes, seed: this.seed, completed: this.completed, interactions: this.interactions, convPairs, lastTalk, lastSocial, lastShop, lastCommute }))
   }
   restore(s: any) {
     this.agents = s.agents; this.memories = s.memories; this.events = s.events; this.tick = s.tick; this.simMinutes = s.simMinutes; this.completed = s.completed; this.interactions = s.interactions
@@ -650,6 +690,18 @@ export class SimEngine {
       }
     }
     for (const a of this.agents) if (!this.lastShop.has(a.id)) this.lastShop.set(a.id, this.simMinutes)
+    // Restore the commuting clock from the snapshot, with the same
+    // validation as the shopping clock: timestamps on the restored
+    // timeline only, and agents with no entry start at the load, not
+    // at "never commuted", so a load never triggers a city-wide rush
+    // to the bus stop at the next rush hour.
+    this.lastCommute.clear()
+    if (Array.isArray(s.lastCommute)) {
+      for (const [id, at] of s.lastCommute) {
+        if (typeof id === 'string' && typeof at === 'number' && at <= this.simMinutes) this.lastCommute.set(id, at)
+      }
+    }
+    for (const a of this.agents) if (!this.lastCommute.has(a.id)) this.lastCommute.set(a.id, this.simMinutes)
     // the guard releases both on the next tick — so treat the load as
     // the moment they split: give them the same 30-minute no-repeat
     // window a natural release sets. Without this the pair could
