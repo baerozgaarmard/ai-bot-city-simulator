@@ -894,4 +894,32 @@ describe('engine', () => {
     expect(sleepsEndingAt0 / sleeps).toBeLessThan(0.1)
     expect(restsEndingAt0 / rests).toBeLessThan(0.65)
   })
+  it('energyNeed changes how fast an agent tires instead of being dead data', () => {
+    // Regression: energyNeed was seeded per agent (30-80), typed in
+    // the Agent personality, and required by addAgent — but nothing
+    // ever read it. The drain was a flat 0.25/min for everyone, so an
+    // agent with energyNeed 90 and one with 30 had identical energy
+    // trajectories (both 80 -> 77.5 over 10 minutes of Working). The
+    // drain now scales with energyNeed around the 60 baseline, so a
+    // high-need agent tires measurably faster than a low-need one,
+    // while the city-wide mean stays ~0.25/min and the calibrated
+    // energy balance is preserved.
+    const e = new SimEngine(5)
+    const office = LOCATIONS.find(l => l.id === 'office')!
+    const acc = { v: 0 }
+    const [low, high] = [e.agents[0], e.agents[1]]
+    for (const [a, need] of [[low, 30], [high, 90]] as const) {
+      a.personality.energyNeed = need
+      a.pos = { ...office.entrance }
+      a.state = 'Working'; a.goal = 'Work'; a.path = []; a.dest = null
+      a.activity = 'Working at Office Building'
+      a.activityUntil = e.simMinutes + 90; a.cooldownUntil = 0
+      a.energy = 80; a.hunger = 0
+      ;(a as any)._target = { loc: office, state: 'Working', activity: 'Working at Office Building', durationMin: 90 }
+    }
+    for (let i = 0; i < 10; i++) e.step(1, acc)
+    expect(low.energy).toBeGreaterThan(high.energy)
+    expect(low.energy).toBeCloseTo(80 - 10 * (0.25 + (30 - 60) * 0.001), 9)
+    expect(high.energy).toBeCloseTo(80 - 10 * (0.25 + (90 - 60) * 0.001), 9)
+  })
 })

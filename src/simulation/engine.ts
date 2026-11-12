@@ -342,7 +342,22 @@ export class SimEngine {
         // recovery lands as a lump sum at completion, so about half
         // of rests still read 0 in their final minute — the +40
         // arrives with the completion, not during the rest.
-        a.energy = Math.max(0, a.energy - 0.25); a.hunger = Math.min(100, a.hunger + 0.2)
+        // The 0.25 is the mean, not a flat rate for everyone: it
+        // scales with the agent's energyNeed personality trait around
+        // the 60 baseline — a high-need agent (80) drains 0.27/min
+        // and a low-need one (30) 0.22/min. energyNeed used to be
+        // dead data: seeded per agent (30-80), typed in the Agent
+        // personality, and required by addAgent, but nothing ever
+        // read it, so two agents differing only in energyNeed had
+        // identical energy trajectories (both 80 -> 77.5 over 10
+        // minutes of Working, for energyNeed 30 and 90 alike). The
+        // scale is centred on 60 and the seed table's mean energyNeed
+        // is ~59, so the city-wide mean drain stays ~0.249/min and
+        // the balance above is preserved; the ±0.02 spread is small
+        // enough that no single agent's economy breaks, and a new
+        // agent (energyNeed 60) drains at exactly the baseline.
+        const energyDrain = 0.25 + (a.personality.energyNeed - 60) * 0.001
+        a.energy = Math.max(0, a.energy - energyDrain); a.hunger = Math.min(100, a.hunger + 0.2)
         // Mood responds to how the agent feels: being very hungry or
         // exhausted drags it down, and being fed and rested lets it
         // recover. The recovery used to fire only below 40, so mood could
