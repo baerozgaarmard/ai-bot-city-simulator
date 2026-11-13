@@ -600,7 +600,19 @@ export class SimEngine {
         if (other.state === 'Conversing') { other.state = 'Idle'; other.activity = 'Finished conversation'; other.cooldownUntil = this.simMinutes + 5 }
       }
     }
-    a.state = 'Idle'; a.path = []; a.dest = null; a.energy = 80; a.hunger = 20; a.mood = 70; a.activity = 'Reset'; a.goal = 'Settle in'
+    // A reset restarts ALL of the agent's current state, not just the
+    // three stats the line used to set: confidence is a live stat like
+    // mood (it drifts with hunger and exhaustion and only rises +5 per
+    // completed shift), so a reset that left it untouched put a "fresh"
+    // agent back in the city with confidence 23 after a miserable
+    // stretch — the inspector showed Energy 80 / Hunger 20 / Mood 70
+    // next to Confidence 23. Likewise the displayed thought, intention
+    // and recent actions are all read from the agent, so leaving them
+    // kept showing "Shopping at Corner Shop." / "Shop" / a list of
+    // pre-reset goals against state Idle, activity "Reset" and goal
+    // "Settle in". Relationships are social history, like memories,
+    // and are deliberately kept.
+    a.state = 'Idle'; a.path = []; a.dest = null; a.energy = 80; a.hunger = 20; a.mood = 70; a.confidence = 70; a.activity = 'Reset'; a.goal = 'Settle in'; a.thought = 'Starting over in Smallville.'; a.intention = 'Find a routine'; a.recentActions = []
     // A reset must actually restart the agent: a paused agent that is
     // reset kept paused=true, so step() skipped it forever — frozen on
     // Idle/"Reset" with no goal, and nothing ever unpaused it. Likewise

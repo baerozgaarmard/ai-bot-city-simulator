@@ -691,6 +691,26 @@ describe('engine', () => {
     expect(a.state).not.toBe('Idle')
     expect(a.activity).not.toBe('Reset')
   })
+  it('resetting an agent resets confidence, thought, intention and recent actions too', () => {
+    // Regression: resetAgent reset energy/hunger/mood but left
+    // confidence at its pre-reset value, so a "fresh" agent came back
+    // with Confidence 23 next to Energy 80 / Hunger 20 / Mood 70 (a
+    // 5k-minute probe showed exactly that). It also left the displayed
+    // thought ("Shopping at Corner Shop."), intention ("Shop") and
+    // recent actions from the pre-reset goal, contradicting the Idle /
+    // "Reset" / "Settle in" the inspector showed after the reset.
+    const e = new SimEngine(7); const a = e.agents[0]
+    const acc = { v: 0 }
+    for (let i = 0; i < 5000; i++) e.step(1, acc)
+    expect(a.recentActions.length).toBeGreaterThan(0)
+    expect(a.thought).not.toBe('Starting over in Smallville.')
+    e.resetAgent(a.id)
+    expect(a.energy).toBe(80); expect(a.hunger).toBe(20); expect(a.mood).toBe(70); expect(a.confidence).toBe(70)
+    expect(a.thought).toBe('Starting over in Smallville.')
+    expect(a.intention).toBe('Find a routine')
+    expect(a.goal).toBe('Settle in')
+    expect(a.recentActions).toEqual([])
+  })
   it('an agent that hits zero energy mid-shift stops working instead of finishing the shift at zero', () => {
     // Regression: pickGoal's utilities only decide at the START of an
     // activity — Work beats Rest down to ~energy 20 — so an agent that
