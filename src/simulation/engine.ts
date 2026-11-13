@@ -366,9 +366,22 @@ export class SimEngine {
     for (const a of this.agents) {
       if (a.paused) continue
       if (a.path.length) {
-        const next = a.path[0]; const dx = next.x - a.pos.x, dy = next.y - a.pos.y; const dist = Math.hypot(dx, dy)
-        const stepDist = 3 * simSeconds
-        if (dist <= stepDist) { a.pos = { ...next }; a.path.shift(); if (!a.path.length) this.arrive(a) } else { a.pos = { x: a.pos.x + dx / dist * stepDist, y: a.pos.y + dy / dist * stepDist } }
+        // Spend the whole step's movement budget, not just one tile:
+        // the loop used to consume a single waypoint per step() call no
+        // matter how far 3 * simSeconds reaches, so a 1-second step
+        // (the way every test drives the engine, and what a slow frame
+        // at 8x amounts to in the UI) moved an agent exactly 1 tile
+        // instead of 3 — walks took 3x as long in sim-minutes as the
+        // documented 3 tiles/sec, e.g. a 19-tile walk to the restaurant
+        // took 19 sim-minutes and stretched a hunger-100 streak to
+        // ~69 minutes. At 1x/60fps nothing changes (a frame's
+        // budget is 0.05 tiles, under one waypoint); the budget only
+        // matters when a call covers more than one tile.
+        let remaining = 3 * simSeconds
+        while (remaining > 0 && a.path.length) {
+          const next = a.path[0]; const dx = next.x - a.pos.x, dy = next.y - a.pos.y; const dist = Math.hypot(dx, dy)
+          if (dist <= remaining) { a.pos = { ...next }; a.path.shift(); remaining -= dist; if (!a.path.length) this.arrive(a) } else { a.pos = { x: a.pos.x + dx / dist * remaining, y: a.pos.y + dy / dist * remaining }; remaining = 0 }
+        }
       }
     }
     // Decision tick: one sim minute per accumulated 60 sim-seconds
@@ -434,21 +447,29 @@ export class SimEngine {
         // agent is actually doing instead of converging on 40.
         // The rates are deliberately asymmetric, not the old symmetric
         // ±0.2: bad minutes (hunger >= 80 or energy <= 10) are only
-        // ~28% of agent-minutes, so a symmetric update nets about
-        // +0.09/min and mood ratcheted the other way instead — it sat
-        // at exactly 100 for 43-44% of agent-minutes and below 50 for
-        // under 1%, all 24 agents ending a 30k-minute run at 72-100 on
-        // every seed, the same pinned-at-the-cap failure confidence had
-        // before its fix. A -0.2 dent against a +0.11 recovery keeps
-        // mood wandering mid-range: the dent is steep enough that a
-        // long hungry or exhausted stretch pulls mood down visibly,
-        // and the recovery is fast enough that a fed, rested agent
-        // climbs back instead of sitting glum — while a steeper
-        // -0.25/+0.1 pair overshot the other way (mood below 50 for
+        // ~22% of agent-minutes (28% before the walking fix, when
+        // agents spent 3x as long in transit with hunger rising and
+        // energy falling and no recovery), so a symmetric update nets
+        // about +0.09/min and mood ratcheted the other way instead —
+        // it sat at exactly 100 for 43-44% of agent-minutes and below
+        // 50 for under 1%, all 24 agents ending a 30k-minute run at
+        // 72-100 on every seed, the same pinned-at-the-cap failure
+        // confidence had before its fix. A -0.2 dent against a +0.09
+        // recovery keeps mood wandering mid-range: the dent is steep
+        // enough that a long hungry or exhausted stretch pulls mood
+        // down visibly, and the recovery is fast enough that a fed,
+        // rested agent climbs back instead of sitting glum — measured
+        // ~21-27% of agent-minutes at 100 across three seeds, below 50
+        // for under 1%. Do not slow the recovery further: at +0.085
+        // the most sociable agent (Mia, 85) tips into a low-mood trap
+        // — below 50 for 94% of a 30k-minute run on seed 777, where
+        // Socialize's `mood < 50` bonus keeps her socializing instead
+        // of shopping, so she never shops at all — and a steeper
+        // -0.25/+0.1 pair overshot the same way (mood below 50 for
         // ~65% of agent-minutes, which also inflated Socialize's
         // `mood < 50` bonus city-wide until Shop lost again).
         if (a.hunger >= 80 || a.energy <= 10) a.mood = Math.max(0, a.mood - 0.2)
-        else a.mood = Math.min(100, a.mood + 0.11)
+        else a.mood = Math.min(100, a.mood + 0.09)
         // Confidence follows the same trigger as mood — being very hungry
         // or exhausted dents it, being fed and rested lets it recover —
         // but on its own scale, not mood's ±0.2. It used to share mood's

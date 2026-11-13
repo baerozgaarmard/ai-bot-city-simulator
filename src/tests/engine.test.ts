@@ -76,23 +76,28 @@ describe('engine', () => {
   })
   it('mood does not saturate at 100 over a long run', () => {
     // Regression: mood's per-minute update was symmetric ±0.2, but bad
-    // minutes (hunger >= 80 or energy <= 10) are only ~28% of
-    // agent-minutes, so it netted about +0.09/min and ratcheted to the
-    // cap — mood sat at exactly 100 for 43-44% of agent-minutes and
-    // below 50 for under 1%, all 24 agents ending a 30k-minute run at
-    // 72-100 on every seed, the same pinned-at-the-cap failure
-    // confidence had before its fix. The inspector's Mood % was
-    // effectively maxed for the whole city nearly half the time. Mood
-    // now dents faster than it recovers (-0.2 vs +0.11), so it wanders
-    // mid-range instead of living at the cap (measured: ~20% of
-    // agent-minutes at 100 on three seeds, vs 43-44% before).
+    // minutes (hunger >= 80 or energy <= 10) are only ~22% of
+    // agent-minutes (~28% before the walking fix), so it netted about
+    // +0.09/min and ratcheted to the cap — mood sat at exactly 100 for
+    // 43-44% of agent-minutes and below 50 for under 1%, all 24 agents
+    // ending a 30k-minute run at 72-100 on every seed, the same
+    // pinned-at-the-cap failure confidence had before its fix. The
+    // inspector's Mood % was effectively maxed for the whole city
+    // nearly half the time. Mood now dents faster than it recovers
+    // (-0.2 vs +0.09), so it wanders mid-range instead of living at
+    // the cap (measured: ~21-27% of agent-minutes at 100 across three
+    // seeds, vs 43-44% before). The 0.30 bound is loose on purpose:
+    // it catches a return to saturation, not small drift — the
+    // recovery cannot go lower without tipping the most sociable
+    // agent into the low-mood trap (see the engine comment), so the
+    // at-100 share sits just above the old 0.25 line.
     const e = new SimEngine(777); const acc = { v: 0 }
     let at100 = 0; let total = 0
     for (let i = 0; i < 30000; i++) {
       e.step(1, acc)
       for (const a of e.agents) { total++; if (a.mood >= 100) at100++ }
     }
-    expect(at100 / total).toBeLessThan(0.25)
+    expect(at100 / total).toBeLessThan(0.30)
     const spread = Math.max(...e.agents.map(a => a.mood)) - Math.min(...e.agents.map(a => a.mood))
     expect(spread).toBeGreaterThan(10)
   })
@@ -1059,5 +1064,29 @@ describe('engine', () => {
     expect(low.energy).toBeGreaterThan(high.energy)
     expect(low.energy).toBeCloseTo(80 - 10 * (0.25 + (30 - 60) * 0.001), 9)
     expect(high.energy).toBeCloseTo(80 - 10 * (0.25 + (90 - 60) * 0.001), 9)
+  })
+  it('a 1-second step moves a walking agent 3 tiles, not 1', () => {
+    // Regression: the movement loop consumed a single waypoint per
+    // step() call no matter how far 3 * simSeconds reaches, so a
+    // 1-second step (the way every test drives the engine, and what a
+    // slow frame at 8x amounts to in the UI) moved an agent exactly 1
+    // tile instead of 3 — walks took 3x as long in sim-minutes as the
+    // documented 3 tiles/sec, and a 19-tile walk to the restaurant
+    // stretched a hunger-100 streak to ~69 minutes. The loop now spends the whole
+    // step's movement budget across waypoints, so a 1-second step
+    // covers 3 tiles and a 19-tile path takes ~7 sim-minutes.
+    const e = new SimEngine(42)
+    const acc = { v: 0 }
+    const a = e.agents[0]
+    const path = astar(walkableGrid(), { x: 6, y: 12 }, { x: 18, y: 5 })
+    expect(path.length).toBeGreaterThan(10)
+    a.pos = { x: 6, y: 12 }; a.path = [...path]; a.dest = { x: 18, y: 5 }
+    a.state = 'Walking'; a.activityUntil = 0; a.cooldownUntil = 0
+    ;(a as any)._target = undefined
+    const start = { ...a.pos }
+    e.step(1, acc)
+    const moved = Math.abs(a.pos.x - start.x) + Math.abs(a.pos.y - start.y)
+    expect(moved).toBeCloseTo(3, 9)
+    expect(a.path.length).toBe(path.length - 3)
   })
 })
