@@ -432,8 +432,23 @@ export class SimEngine {
         // value for days. Recovery now applies whenever the agent is fed
         // and rested, at any mood, so mood rises and falls with how the
         // agent is actually doing instead of converging on 40.
+        // The rates are deliberately asymmetric, not the old symmetric
+        // ±0.2: bad minutes (hunger >= 80 or energy <= 10) are only
+        // ~28% of agent-minutes, so a symmetric update nets about
+        // +0.09/min and mood ratcheted the other way instead — it sat
+        // at exactly 100 for 43-44% of agent-minutes and below 50 for
+        // under 1%, all 24 agents ending a 30k-minute run at 72-100 on
+        // every seed, the same pinned-at-the-cap failure confidence had
+        // before its fix. A -0.2 dent against a +0.11 recovery keeps
+        // mood wandering mid-range: the dent is steep enough that a
+        // long hungry or exhausted stretch pulls mood down visibly,
+        // and the recovery is fast enough that a fed, rested agent
+        // climbs back instead of sitting glum — while a steeper
+        // -0.25/+0.1 pair overshot the other way (mood below 50 for
+        // ~65% of agent-minutes, which also inflated Socialize's
+        // `mood < 50` bonus city-wide until Shop lost again).
         if (a.hunger >= 80 || a.energy <= 10) a.mood = Math.max(0, a.mood - 0.2)
-        else a.mood = Math.min(100, a.mood + 0.2)
+        else a.mood = Math.min(100, a.mood + 0.11)
         // Confidence follows the same trigger as mood — being very hungry
         // or exhausted dents it, being fed and rested lets it recover —
         // but on its own scale, not mood's ±0.2. It used to share mood's
@@ -449,10 +464,11 @@ export class SimEngine {
         // energy <= 10) are ~27% of agent-minutes, Work adds ~+0.01/min
         // averaged out, so a -0.3 dent against a +0.1 recovery nets
         // about zero — confidence wanders with what the agent is doing
-        // instead of ratcheting to the cap the way mood does (mood's
-        // symmetric ±0.2 nets about +0.09/min, which is why it sits at
-        // exactly 100 for ~45% of agent-minutes). Mood falls twice as
-        // fast as confidence recovers and confidence dents 50% faster
+        // instead of ratcheting to the cap. Mood uses the same
+        // asymmetric shape (a -0.2 dent, +0.11 recovery) for the same
+        // reason; its symmetric ±0.2 predecessor sat at exactly 100
+        // for ~44% of agent-minutes. Mood falls faster than it
+        // recovers and confidence dents faster
         // than mood, so the two trajectories separate on every stretch
         // instead of tracking tick-for-tick.
         if (a.hunger >= 80 || a.energy <= 10) a.confidence = Math.max(0, a.confidence - 0.3)

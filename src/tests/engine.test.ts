@@ -74,6 +74,28 @@ describe('engine', () => {
     const changed = e.agents.filter((a, i) => a.mood !== before[i]).length
     expect(changed).toBeGreaterThan(0)
   })
+  it('mood does not saturate at 100 over a long run', () => {
+    // Regression: mood's per-minute update was symmetric ±0.2, but bad
+    // minutes (hunger >= 80 or energy <= 10) are only ~28% of
+    // agent-minutes, so it netted about +0.09/min and ratcheted to the
+    // cap — mood sat at exactly 100 for 43-44% of agent-minutes and
+    // below 50 for under 1%, all 24 agents ending a 30k-minute run at
+    // 72-100 on every seed, the same pinned-at-the-cap failure
+    // confidence had before its fix. The inspector's Mood % was
+    // effectively maxed for the whole city nearly half the time. Mood
+    // now dents faster than it recovers (-0.2 vs +0.11), so it wanders
+    // mid-range instead of living at the cap (measured: ~20% of
+    // agent-minutes at 100 on three seeds, vs 43-44% before).
+    const e = new SimEngine(777); const acc = { v: 0 }
+    let at100 = 0; let total = 0
+    for (let i = 0; i < 30000; i++) {
+      e.step(1, acc)
+      for (const a of e.agents) { total++; if (a.mood >= 100) at100++ }
+    }
+    expect(at100 / total).toBeLessThan(0.25)
+    const spread = Math.max(...e.agents.map(a => a.mood)) - Math.min(...e.agents.map(a => a.mood))
+    expect(spread).toBeGreaterThan(10)
+  })
   it('confidence does not saturate at 100 for every agent over a long run', () => {
     // Regression: confidence only ever rose (+5 per completed Work) and
     // nothing ever lowered it, so by 10k minutes all 24 agents were
