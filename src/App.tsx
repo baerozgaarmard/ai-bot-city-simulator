@@ -28,7 +28,13 @@ export default function App() {
     engine.addAgent({ name: form.name.trim(), role: form.role, personality: { sociability: form.sociability, energyNeed: 60, curiosity: 60, routine: 50 }, locationId: form.locationId, energy: form.energy, mood: form.mood })
     setShowAdd(false); setFormError(''); ui.sync()
   }
-  const doSave = async () => { await saveWorld(engine.snapshot()); alert('World saved locally (IndexedDB).') }
+  // Save must report a failure, not fail silently: saveWorld rejects when
+  // IndexedDB itself is unavailable (blocked storage, private mode), and
+  // doSave used to await it with no error handling — the promise rejected
+  // unhandled, no confirmation appeared, and the user clicked Save and
+  // nothing happened, while the save had not worked at all. Load already
+  // alerts on failure; Save must too.
+  const doSave = async () => { try { await saveWorld(engine.snapshot()); alert('World saved locally (IndexedDB).') } catch { alert('World could not be saved — browser storage is unavailable or blocked.') } }
   const doLoad = async () => { try { const s = await loadWorld(); if (!s) { alert('No saved world found.'); return } engine.restore(s); ui.sync(); alert('World loaded.') } catch { alert('Saved world is corrupted or incompatible and was not loaded.') } }
   const doReset = () => { if (window.confirm('Reset the simulation? Unsaved progress will be discarded.')) { window.location.reload() } }
   return (

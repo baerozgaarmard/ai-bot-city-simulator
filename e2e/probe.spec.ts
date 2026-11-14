@@ -76,3 +76,26 @@ test('save still works when localStorage is unavailable', async ({ page }) => {
   expect(dialogText).toBe('World saved locally (IndexedDB).')
   expect(errors).toEqual([])
 })
+
+test('save reports the failure when IndexedDB is unavailable', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
+  // Regression: doSave awaited saveWorld with no error handling, so when
+  // IndexedDB itself failed (blocked storage, private mode) the promise
+  // rejected unhandled, no confirmation appeared, and the user clicked
+  // Save and nothing happened — the same silent failure the localStorage
+  // fix addressed for the bookmark, but for the storage backend itself.
+  // Load already alerts on failure; Save must too.
+  await page.addInitScript(() => {
+    window.indexedDB.open = () => { throw new Error('IndexedDB blocked') }
+  })
+  await page.goto('/')
+  await expect(page.getByText('Alice').first()).toBeVisible()
+  let dialogText = ''
+  page.on('dialog', (d) => { dialogText = d.message(); d.accept() })
+  await page.getByRole('button', { name: 'Save' }).click()
+  await page.waitForTimeout(500)
+  expect(dialogText).toMatch(/could not be saved/i)
+  expect(errors).toEqual([])
+})
