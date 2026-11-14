@@ -351,6 +351,17 @@ export class SimEngine {
     // hour instead of moving on.
     if (a.goal === 'Commute') this.lastCommute.set(a.id, this.simMinutes)
     this.log('GOAL', a, loc ?? null, `${a.name} completed ${a.goal.toLowerCase()}.`)
+    // A completed goal must not keep describing the agent: complete()
+    // used to leave goal, intention and thought at the finished
+    // activity, so the inspector showed "Goal: Commute · Intention:
+    // Commute" and "Waiting for the bus at Bus Stop." against state
+    // Idle and activity "Deciding what to do next" — the same stale
+    // display state resetAgent already resets for a reset agent, but
+    // recurring after every one of the ~11k completions in a 30k-minute
+    // run. Reset them to the same neutral values a fresh agent starts
+    // with, after the log line and the clock resets above have read
+    // the finished goal.
+    a.goal = 'Settle in'; a.intention = 'Find a routine'; a.thought = 'Deciding what to do next.'
     a.cooldownUntil = this.simMinutes + 2; a.state = 'Idle'; a.activity = 'Deciding what to do next'; a.dest = null; a.path = []; a.activityUntil = 0; (a as any)._target = undefined
   }
   /** Advance simulation by real seconds (already speed-scaled by caller).
@@ -547,6 +558,13 @@ export class SimEngine {
             this.complete(a)
             a.state = 'Idle'; a.activity = 'Finished conversation'; a.cooldownUntil = this.simMinutes + 5
           }
+          // The thought must match the break, not the conversation that
+          // just ended: the release used to leave "Socializing at
+          // Central Park." against state Idle and activity "Finished
+          // conversation", the same stale thought complete() now resets.
+          // The resume branch sets a fresh socializing thought when the
+          // agent goes back out, so this only covers the Idle gap.
+          a.thought = 'Finished conversation.'
         }
         // Exhaustion interrupt: an agent that hits 0 energy mid-activity
         // stops instead of finishing the shift at zero. Without this,
@@ -636,7 +654,7 @@ export class SimEngine {
         // Same stale-destination rule as a natural release: the partner
         // goes Idle, so its dest is cleared too — otherwise the
         // inspector keeps showing it a destination while it stands still.
-        if (other.state === 'Conversing') { other.state = 'Idle'; other.activity = 'Finished conversation'; other.cooldownUntil = this.simMinutes + 5; other.dest = null }
+        if (other.state === 'Conversing') { other.state = 'Idle'; other.activity = 'Finished conversation'; other.cooldownUntil = this.simMinutes + 5; other.dest = null; other.thought = 'Finished conversation.' }
       }
     }
     // A reset restarts ALL of the agent's current state, not just the

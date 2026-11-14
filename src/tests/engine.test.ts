@@ -716,6 +716,49 @@ describe('engine', () => {
     expect(a.goal).toBe('Settle in')
     expect(a.recentActions).toEqual([])
   })
+  it('completing a goal clears its goal, intention and thought instead of leaving them stale', () => {
+    // Regression: complete() left goal, intention and thought at the
+    // finished activity, so the inspector showed "Goal: Commute ·
+    // Intention: Commute" and "Waiting for the bus at Bus Stop."
+    // against state Idle and activity "Deciding what to do next" —
+    // the same stale display state resetAgent already resets for a
+    // reset agent, recurring after every completion. A released
+    // conversation partner had the same fault ("Socializing at
+    // Central Park." against "Finished conversation"). Both now reset
+    // to the neutral values a fresh agent starts with.
+    const e = new SimEngine(7); const office = LOCATIONS.find(l => l.id === 'office')!
+    const a = e.agents[0]
+    a.pos = { ...office.entrance }; a.state = 'Working'; a.goal = 'Work'; a.path = []; a.dest = { ...office.entrance }
+    a.activity = 'Working at Office Building'; a.thought = 'Working at Office Building.'; a.intention = 'Work'
+    a.activityUntil = e.simMinutes + 1; a.cooldownUntil = 0; a.energy = 90; a.hunger = 0
+    ;(a as any)._target = { loc: office, state: 'Working', activity: 'Working at Office Building', durationMin: 90 }
+    const acc = { v: 0 }
+    for (let i = 0; i < 2; i++) e.step(1, acc) // completes, still inside the 2-minute cooldown
+    expect(a.state).toBe('Idle')
+    expect(a.activity).toBe('Deciding what to do next')
+    expect(a.goal).toBe('Settle in')
+    expect(a.intention).toBe('Find a routine')
+    expect(a.thought).toBe('Deciding what to do next.')
+    expect(a.recentActions).toContain('Work at Office Building')
+    // Conversation release: both partners' thoughts must match the break.
+    const e2 = new SimEngine(77); const park = LOCATIONS.find(l => l.id === 'park')!
+    const [x, y] = e2.agents
+    for (const ag of e2.agents) if (![x, y].includes(ag)) { ag.paused = true; ag.pos = { x: 0, y: 0 }; ag.state = 'Idle'; ag.path = [] }
+    const stage = (ag: any) => {
+      ag.pos = { ...park.entrance }; ag.state = 'Socializing'; ag.path = []; ag.dest = null
+      ag.goal = 'Socialize'; ag.activityUntil = e2.simMinutes + 40; ag.cooldownUntil = 0
+      ag._target = { loc: park, state: 'Socializing', activity: 'Socializing', durationMin: 40 }
+    }
+    stage(x); stage(y); (e2 as any).arrive(x)
+    expect(x.state).toBe('Conversing')
+    const acc2 = { v: 0 }
+    for (let i = 0; i < 11; i++) e2.step(1, acc2) // past the 10-minute conversation
+    expect(x.state).toBe('Idle')
+    expect(x.activity).toBe('Finished conversation')
+    expect(x.thought).toBe('Finished conversation.')
+    expect(y.state).toBe('Idle')
+    expect(y.thought).toBe('Finished conversation.')
+  })
   it('an agent that hits zero energy mid-shift stops working instead of finishing the shift at zero', () => {
     // Regression: pickGoal's utilities only decide at the START of an
     // activity — Work beats Rest down to ~energy 20 — so an agent that
