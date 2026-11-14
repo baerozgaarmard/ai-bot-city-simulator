@@ -344,6 +344,38 @@ describe('engine', () => {
     expect(new Set(ids).size).toBe(200)
     expect(new Set([...e.agents.map(a => a.id)]).size).toBe(e.agents.length)
   })
+  it('a newly added agent works where its role works, not at the office', () => {
+    // Regression: addAgent hardcoded workplace: 'office' for every new
+    // agent, so a Chef added from the Add Agent form walked to the
+    // Office Building (14,5) to work instead of the Restaurant (18,5),
+    // a Bus Driver never went near the bus stop, and a Barista never
+    // worked at the cafe — while every seeded agent of the same role
+    // works at its own location. The workplace must come from the role,
+    // the way the seed table maps it.
+    const e = new SimEngine(5)
+    const mk = (name: string, role: string) => e.addAgent({ name, role, personality: { sociability: 60, energyNeed: 60, curiosity: 60, routine: 50 }, locationId: 'cafe', energy: 80, mood: 70 })
+    expect(mk('NewChef', 'Chef').workplace).toBe('restaurant')
+    expect(mk('NewBaker', 'Baker').workplace).toBe('restaurant')
+    expect(mk('NewDriver', 'Bus Driver').workplace).toBe('bus')
+    expect(mk('NewBarista', 'Barista').workplace).toBe('cafe')
+    expect(mk('NewKeeper', 'Shopkeeper').workplace).toBe('shop')
+    expect(mk('NewDoctor', 'Doctor').workplace).toBe('townhall')
+    expect(mk('NewArtist', 'Artist').workplace).toBe('park')
+    expect(mk('NewDev', 'Software Developer').workplace).toBe('office')
+    expect(mk('NewUnknown', 'Astronaut').workplace).toBe('office')
+    // ...and the chef actually goes to work at the restaurant, not the office.
+    const chef = e.agents.find(a => a.name === 'NewChef')!
+    e.simMinutes = 10 * 60 // 10:00, work hours
+    chef.energy = 90; chef.hunger = 10; chef.state = 'Idle'; chef.activityUntil = 0; chef.cooldownUntil = 0; chef.path = []; chef.dest = null; (chef as any)._target = undefined
+    const acc = { v: 0 }
+    for (let i = 0; i < 60; i++) {
+      e.step(1, acc)
+      const st: string = chef.state
+      if (st === 'Working') break
+    }
+    expect(chef.state).toBe('Working')
+    expect(Math.round(chef.pos.x)).toBe(18); expect(Math.round(chef.pos.y)).toBe(5)
+  })
   it('resetting a Conversing agent unwinds the conversation instead of leaving a stale conv entry', () => {
     // Regression: resetAgent left the agent's entry in the conv map, so
     // arrive() would never pick it as a conversation partner again (it

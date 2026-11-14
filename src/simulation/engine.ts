@@ -32,6 +32,18 @@ const SEED_AGENTS: Array<[string, string, number, number, number, number, string
 ]
 const COLORS = ['#e11d48', '#f59e0b', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6', '#f97316']
 
+// Where each role works, read off the seed table: a role's workplace is
+// the location its seeded agents work at (Chef -> restaurant, Bus
+// Driver -> bus, Barista -> cafe, ...). addAgent used to hardcode
+// workplace: 'office' for every new agent, so a Chef added from the
+// Add Agent form walked to the Office Building to work and a Bus
+// Driver never went near the bus stop. First seeded occurrence wins
+// for the one role with two workplaces (Student: Charlie works at the
+// park, Yusuf at the cafe); a role the seed table never uses falls
+// back to the office.
+const WORKPLACE_BY_ROLE: Record<string, string> = {}
+for (const [, role, , , , , , work] of SEED_AGENTS) WORKPLACE_BY_ROLE[role] ??= work
+
 let uid = 0
 const nid = (p: string) => `${p}-${++uid}-${Date.now().toString(36)}`
 
@@ -609,7 +621,7 @@ export class SimEngine {
   }
   addAgent(input: { name: string; role: string; personality: Agent['personality']; locationId: string; energy: number; mood: number }) {
     const loc = this.locById(input.locationId)
-    const a: Agent = { id: nid('agent'), name: input.name, role: input.role, color: pick(this.rng, COLORS), personality: input.personality, pos: { ...loc.entrance }, dest: null, path: [], state: 'Idle', activity: 'Arriving', goal: 'Settle in', intention: 'Settle in', thought: 'New in Smallville.', energy: input.energy, hunger: 20, mood: input.mood, sociability: input.personality.sociability, confidence: 60, home: 'residential', workplace: 'office', paused: false, activityUntil: 0, cooldownUntil: 0, relationships: {}, recentActions: [] }
+    const a: Agent = { id: nid('agent'), name: input.name, role: input.role, color: pick(this.rng, COLORS), personality: input.personality, pos: { ...loc.entrance }, dest: null, path: [], state: 'Idle', activity: 'Arriving', goal: 'Settle in', intention: 'Settle in', thought: 'New in Smallville.', energy: input.energy, hunger: 20, mood: input.mood, sociability: input.personality.sociability, confidence: 60, home: 'residential', workplace: WORKPLACE_BY_ROLE[input.role] ?? 'office', paused: false, activityUntil: 0, cooldownUntil: 0, relationships: {}, recentActions: [] }
     this.lastSocial.set(a.id, this.simMinutes)
     this.lastShop.set(a.id, this.simMinutes)
     this.lastCommute.set(a.id, this.simMinutes)
