@@ -516,7 +516,17 @@ export class SimEngine {
           // cooldown makes the agent stand Idle ("Finished
           // conversation") before its next goal, so each conversation
           // reads as a separate event.
-          this.conv.delete(a.id); a.state = 'Idle'; a.activity = 'Finished conversation'; a.cooldownUntil = this.simMinutes + 5
+          // A released agent is Idle and heading nowhere, so clear the
+          // destination too: the release used to leave dest pointing at
+          // the park/cafe entrance, and the inspector showed
+          // "Destination: (10, 8)" for an agent standing still deciding
+          // what to do next — 3,390 Idle agent-minutes with a stale
+          // dest in a 30k-minute probe on seed 42 (3,575 on 777, 3,645
+          // on 20261028), every one of them activity "Finished
+          // conversation". complete() and resetAgent() already null
+          // dest when they leave an agent Idle; the conversation
+          // release was the one path that forgot.
+          this.conv.delete(a.id); a.state = 'Idle'; a.activity = 'Finished conversation'; a.cooldownUntil = this.simMinutes + 5; a.dest = null
           // A conversation interrupts the agent's Socializing activity,
           // it does not end it — but the release used to drop the
           // activity outright. The agent went Idle, picked a new goal
@@ -568,7 +578,12 @@ export class SimEngine {
           // cannot be re-paired until the cooldown has passed.
           const t: any = (a as any)._target
           if (t?.state === 'Socializing' && a.activityUntil > this.simMinutes && Math.round(a.pos.x) === t.loc.entrance.x && Math.round(a.pos.y) === t.loc.entrance.y) {
-            a.state = 'Socializing'; a.activity = t.activity; a.thought = `${t.activity} at ${t.loc.name}.`
+            // The release cleared dest (an Idle agent is heading
+            // nowhere), so a resumed outing restores it: every other
+            // active state shows its location's entrance as the
+            // destination, and a Socializing agent standing at the
+            // park is at its destination, not destination-less.
+            a.state = 'Socializing'; a.activity = t.activity; a.thought = `${t.activity} at ${t.loc.name}.`; a.dest = { ...t.loc.entrance }
           } else this.pickGoal(a)
         }
       }
@@ -618,7 +633,10 @@ export class SimEngine {
         // instantly re-picks Socialize there on the next tick, arrives
         // instantly and pairs with the next agent standing there, so a
         // reset chains straight into a new conversation with no Idle gap.
-        if (other.state === 'Conversing') { other.state = 'Idle'; other.activity = 'Finished conversation'; other.cooldownUntil = this.simMinutes + 5 }
+        // Same stale-destination rule as a natural release: the partner
+        // goes Idle, so its dest is cleared too — otherwise the
+        // inspector keeps showing it a destination while it stands still.
+        if (other.state === 'Conversing') { other.state = 'Idle'; other.activity = 'Finished conversation'; other.cooldownUntil = this.simMinutes + 5; other.dest = null }
       }
     }
     // A reset restarts ALL of the agent's current state, not just the

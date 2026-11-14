@@ -1089,4 +1089,52 @@ describe('engine', () => {
     expect(moved).toBeCloseTo(3, 9)
     expect(a.path.length).toBe(path.length - 3)
   })
+  it('a released conversation partner has no destination while Idle, and resuming restores it', () => {
+    // Regression: the conversation release set the agent Idle ("Finished
+    // conversation") but left dest pointing at the park/cafe entrance,
+    // so the inspector showed "Destination: (10, 8)" for an agent
+    // standing still deciding what to do next — 3,390 Idle
+    // agent-minutes with a stale dest in a 30k-minute probe on seed 42
+    // (3,575 on 777, 3,645 on 20261028), every one of them activity
+    // "Finished conversation". complete() and resetAgent() already null
+    // dest when they leave an agent Idle; the release was the one path
+    // that forgot, and the partner released by resetAgent() had the
+    // same staleness. Resuming the interrupted Socializing outing
+    // restores dest to the entrance, the way every other active state
+    // shows its location as the destination.
+    const e = new SimEngine(1234)
+    const park = LOCATIONS.find(l => l.id === 'park')!
+    const [a, b] = e.agents
+    for (const agent of [b, a]) {
+      agent.pos = { ...park.entrance }; agent.state = 'Idle'; agent.path = []; agent.dest = null
+      agent.activityUntil = 0; agent.cooldownUntil = 0
+      ;(e as any).setGoal(agent, 'Socialize', park, 'Socializing', 'Socializing', 40)
+    }
+    expect(a.state).toBe('Conversing'); expect(b.state).toBe('Conversing')
+    expect(a.dest).toEqual(park.entrance); expect(b.dest).toEqual(park.entrance)
+    const acc = { v: 0 }
+    for (let i = 0; i < 11; i++) e.step(1, acc)
+    expect(a.state).toBe('Idle'); expect(b.state).toBe('Idle')
+    expect(a.activity).toBe('Finished conversation'); expect(b.activity).toBe('Finished conversation')
+    expect(a.dest).toBeNull(); expect(b.dest).toBeNull()
+    // Past the 5-minute cooldown both resume the interrupted outing
+    // (40-minute window, 11 minutes used) and the destination comes back.
+    for (let i = 0; i < 6; i++) e.step(1, acc)
+    expect(a.state).toBe('Socializing'); expect(b.state).toBe('Socializing')
+    expect(a.dest).toEqual(park.entrance); expect(b.dest).toEqual(park.entrance)
+  })
+  it('no agent is ever Idle with a destination set over a long run', () => {
+    // Invariant form of the stale-dest regression above: the engine's
+    // own convention (seed, addAgent, complete(), resetAgent()) is
+    // Idle => dest null, and the inspector renders dest as the place the
+    // agent is heading. Any Idle agent with a dest is a stale one.
+    const e = new SimEngine(42)
+    const acc = { v: 0 }
+    let violations = 0
+    for (let i = 0; i < 10000; i++) {
+      e.step(1, acc)
+      for (const a of e.agents) if (a.state === 'Idle' && a.dest !== null) violations++
+    }
+    expect(violations).toBe(0)
+  })
 })
