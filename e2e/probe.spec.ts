@@ -53,3 +53,26 @@ test('reset agent button restarts the selected agent', async ({ page }) => {
   await expect(page.getByText('Alice').first()).toBeVisible()
   expect(errors).toEqual([])
 })
+
+test('save still works when localStorage is unavailable', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
+  // Regression: saveWorld wrote a tick bookmark to localStorage that
+  // nothing ever reads. When localStorage is blocked (disabled cookies /
+  // storage-restricted browser) setItem throws AFTER the IndexedDB write
+  // already succeeded, so doSave rejects, no confirmation appears, and
+  // the user clicks Save and nothing happens — while the save actually
+  // worked. Saving must not depend on localStorage.
+  await page.addInitScript(() => {
+    window.localStorage.setItem = () => { throw new Error('localStorage blocked') }
+  })
+  await page.goto('/')
+  await expect(page.getByText('Alice').first()).toBeVisible()
+  let dialogText = ''
+  page.on('dialog', (d) => { dialogText = d.message(); d.accept() })
+  await page.getByRole('button', { name: 'Save' }).click()
+  await page.waitForTimeout(500)
+  expect(dialogText).toBe('World saved locally (IndexedDB).')
+  expect(errors).toEqual([])
+})
