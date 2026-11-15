@@ -454,6 +454,30 @@ describe('engine', () => {
     stage(a); stage(b); (e as any).arrive(a)
     expect(a.state).toBe('Socializing'); expect(b.state).toBe('Socializing')
   })
+  it('resetting an agent restarts its social, shopping and commuting clocks', () => {
+    // Regression: resetAgent restarted the agent's stats, goal and
+    // conversation state, but left lastSocial/lastShop/lastCommute
+    // untouched — the per-agent clocks that add a time-based bonus to
+    // Socialize (up to +45), Shop (up to +30) and Commute (up to +30)
+    // in pickGoal. After a 10k-minute run those clocks are hours old
+    // (Noah's loneliness clock 33 hours stale on seed 42, Peter's shop
+    // clock 46 hours), so a reset agent came back with inflated
+    // utilities and immediately re-picked the outing it was reset from
+    // instead of behaving like the fresh agent Reset claims to create —
+    // the same stale-state class as the confidence/thought/paused/
+    // activityUntil fixes before it. A new agent (addAgent) starts all
+    // three clocks at the current time; a reset must do the same.
+    const e = new SimEngine(42); const acc = { v: 0 }
+    for (let i = 0; i < 10000; i++) e.step(1, acc)
+    // The agent whose loneliness clock is stalest, so the pre-reset
+    // assertion is not vacuous: at least one clock must be hours old.
+    const a = e.agents.reduce((oldest, ag) => (e.simMinutes - (e as any).lastSocial.get(ag.id)) > (e.simMinutes - (e as any).lastSocial.get(oldest.id)) ? ag : oldest)
+    expect(e.simMinutes - (e as any).lastSocial.get(a.id)).toBeGreaterThan(10 * 60)
+    e.resetAgent(a.id)
+    expect((e as any).lastSocial.get(a.id)).toBe(e.simMinutes)
+    expect((e as any).lastShop.get(a.id)).toBe(e.simMinutes)
+    expect((e as any).lastCommute.get(a.id)).toBe(e.simMinutes)
+  })
   it('a finished conversation does not instantly re-form with the same partner at the same entrance', () => {
     // Regression: release and re-pick happened inside one decision tick,
     // so both ex-partners — still standing at the same entrance — could

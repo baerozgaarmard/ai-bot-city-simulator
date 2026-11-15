@@ -690,6 +690,20 @@ export class SimEngine {
     // be re-entered by the next arrival. Clear all four so the next
     // decision tick picks a fresh goal.
     a.paused = false; a.activityUntil = 0; a.cooldownUntil = 0; (a as any)._target = undefined
+    // A reset restarts the agent's goal clocks too: lastSocial,
+    // lastShop and lastCommute are per-agent state on the simMinutes
+    // timeline, and the time-based bonuses they feed (up to +45 for
+    // Socialize, +30 each for Shop and Commute) are what pickGoal
+    // reads. A reset agent kept clocks that could be days old — after
+    // a 10k-minute run Noah's loneliness clock was 33 hours stale, so
+    // his Socialize utility came back inflated by +33 and Peter's Shop
+    // by the full +30 — and the "fresh" agent immediately re-picked
+    // the outing it was reset from instead of behaving like the new
+    // agent Reset claims to create. A new agent (addAgent) starts all
+    // three clocks at the current time; a reset does the same.
+    this.lastSocial.set(id, this.simMinutes)
+    this.lastShop.set(id, this.simMinutes)
+    this.lastCommute.set(id, this.simMinutes)
   }
   snapshot() {
     // conv is a live timer map, not serializable as-is: record the
