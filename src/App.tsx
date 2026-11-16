@@ -25,7 +25,13 @@ export default function App() {
   const submitAdd = () => {
     if (!form.name.trim()) { setFormError('Name is required.'); return }
     if (agents.some(a => a.name.toLowerCase() === form.name.trim().toLowerCase())) { setFormError('An agent with that name already exists.'); return }
-    engine.addAgent({ name: form.name.trim(), role: form.role, personality: { sociability: form.sociability, energyNeed: 60, curiosity: 60, routine: 50 }, locationId: form.locationId, energy: form.energy, mood: form.mood })
+    // Role is required and trimmed, like the name: addAgent looks the
+    // role up verbatim in WORKPLACE_BY_ROLE and the sprite palette, so
+    // a blank role created an agent with no occupation that silently
+    // worked at the office, and a padded 'Chef ' did the same instead
+    // of working at the restaurant.
+    if (!form.role.trim()) { setFormError('Role is required.'); return }
+    engine.addAgent({ name: form.name.trim(), role: form.role.trim(), personality: { sociability: form.sociability, energyNeed: 60, curiosity: 60, routine: 50 }, locationId: form.locationId, energy: form.energy, mood: form.mood })
     setShowAdd(false); setFormError(''); ui.sync()
   }
   // Save must report a failure, not fail silently: saveWorld rejects when
