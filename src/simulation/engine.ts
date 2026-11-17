@@ -1,6 +1,6 @@
 import { astar } from './pathfinding'
 import { mulberry32, pick } from './rng'
-import { LOCATIONS, walkableGrid } from './map'
+import { LOCATIONS, walkableGrid, GRID_W, GRID_H } from './map'
 import type { Agent, AgentState, Location, Memory, SimEvent } from './types'
 
 const SEED_AGENTS: Array<[string, string, number, number, number, number, string, string]> = [
@@ -738,6 +738,39 @@ export class SimEngine {
   }
   restore(s: any) {
     this.agents = s.agents; this.memories = s.memories; this.events = s.events; this.tick = s.tick; this.simMinutes = s.simMinutes; this.completed = s.completed; this.interactions = s.interactions
+    // A save can hold an agent position that is no longer walkable: a
+    // hand-edited save, or a save from before a map change moved a
+    // building onto that tile. setGoal silently drops the goal when A*
+    // finds no path from an unwalkable start, so the agent stayed Idle
+    // forever — no goal, no movement, no completions — while hunger
+    // still rose and energy still drained (a restored agent on cafe
+    // tile (3,3) was still Idle with zero completions after 120
+    // sim-minutes). Snap such agents to the nearest walkable tile on
+    // load, so a bad position can never brick an agent. Only the
+    // position is repaired: a saved path still runs through walkable
+    // waypoints, and an in-progress activity keeps its target and
+    // window. A missing or non-finite position falls back to the
+    // residential entrance.
+    const homeEntrance = this.locById('residential').entrance
+    for (const a of this.agents) {
+      const rx = Math.round(a.pos?.x), ry = Math.round(a.pos?.y)
+      if (Number.isFinite(rx) && Number.isFinite(ry) && ry >= 0 && ry < GRID_H && rx >= 0 && rx < GRID_W && this.grid[ry][rx]) continue
+      const sx = Number.isFinite(rx) ? Math.max(0, Math.min(GRID_W - 1, rx)) : homeEntrance.x
+      const sy = Number.isFinite(ry) ? Math.max(0, Math.min(GRID_H - 1, ry)) : homeEntrance.y
+      const seen = new Set([`${sx},${sy}`]); const q: Array<[number, number]> = [[sx, sy]]
+      let found: [number, number] | null = this.grid[sy][sx] ? [sx, sy] : null
+      while (q.length && !found) {
+        const [x, y] = q.shift()!
+        for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]] as Array<[number, number]>) {
+          if (nx < 0 || ny < 0 || nx >= GRID_W || ny >= GRID_H || seen.has(`${nx},${ny}`)) continue
+          seen.add(`${nx},${ny}`)
+          if (this.grid[ny][nx]) { found = [nx, ny]; break }
+          q.push([nx, ny])
+        }
+      }
+      const dest = found ? { x: found[0], y: found[1] } : homeEntrance
+      a.pos = { x: dest.x, y: dest.y }
+    }
     // The seed is part of the snapshot (and required by WorldSchema), so
     // loading a save must restore it: without this the engine kept its
     // constructor seed (20261028 by default), and a save made after the

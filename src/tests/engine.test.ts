@@ -227,6 +227,27 @@ describe('engine', () => {
     expect(e2.snapshot().seed).toBe(42)
     expect(() => WorldSchema.parse(e2.snapshot())).not.toThrow()
   })
+  it('loading a save with an agent on a non-walkable tile snaps it to a walkable tile instead of leaving it Idle forever', () => {
+    // Regression: restore() trusted saved positions, so an agent on a
+    // non-walkable tile — a hand-edited save, or a save from before a
+    // map change moved a building onto that tile — never moved again:
+    // setGoal silently drops the goal when A* finds no path from an
+    // unwalkable start, so the agent stayed Idle with zero completions
+    // after 120 sim-minutes while hunger still rose and energy still
+    // drained. The load must repair the position to the nearest
+    // walkable tile.
+    const e = new SimEngine(42)
+    const snap = e.snapshot()
+    snap.agents[0].pos = { x: 3, y: 3 } // cafe building tile
+    snap.agents[0].state = 'Idle'; snap.agents[0].path = []; snap.agents[0].dest = null
+    snap.agents[0].activityUntil = 0; snap.agents[0].cooldownUntil = 0; (snap.agents[0] as any)._target = undefined
+    const e2 = new SimEngine(99)
+    e2.restore(JSON.parse(JSON.stringify(snap)))
+    const g = walkableGrid()
+    expect(g[Math.round(e2.agents[0].pos.y)][Math.round(e2.agents[0].pos.x)]).toBe(true)
+    const acc = { v: 0 }; for (let i = 0; i < 120; i++) e2.step(1, acc)
+    expect(e2.agents[0].recentActions.length).toBeGreaterThan(0)
+  })
   it('setting sociability keeps the displayed stat in sync with the goal-choice value', () => {
     // Regression: the inspector slider edited personality.sociability
     // (the value pickGoal reads) while the stats list showed the
