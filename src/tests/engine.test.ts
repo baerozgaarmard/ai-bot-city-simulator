@@ -1257,4 +1257,49 @@ describe('engine', () => {
     }
     expect(violations).toBe(0)
   })
+  it('loading a save with a malformed agent is refused and the live world keeps running', () => {
+    // Regression: WorldSchema only checks that agents is an array of
+    // anything, so a save with a null personality passed validation,
+    // restore() replaced the live world with it, and step() then threw
+    // reading energyNeed of null on the first decision tick — inside
+    // Phaser's update loop, with no alert and no recovery, while the
+    // pre-load world was already gone. restore() must throw before
+    // mutating anything, so doLoad's catch reports the save as corrupted
+    // and the current world is untouched.
+    const e = new SimEngine(42)
+    const acc = { v: 0 }
+    for (let i = 0; i < 100; i++) e.step(1, acc)
+    const before = e.agents.map(a => a.id)
+    const tickBefore = e.tick
+    for (const mutate of [
+      (s: any) => { s.agents = [null] },
+      (s: any) => { s.agents[0].personality = null },
+      (s: any) => { s.agents[0].path = null },
+      (s: any) => { s.agents[0].workplace = 'moon' },
+      (s: any) => { s.agents[0].energy = 'high' },
+      (s: any) => { s.agents[0].recentActions = null },
+    ]) {
+      const bad = JSON.parse(JSON.stringify(e.snapshot()))
+      mutate(bad)
+      expect(() => e.restore(bad)).toThrow()
+      expect(e.agents.map(a => a.id)).toEqual(before)
+    }
+    for (let i = 0; i < 60; i++) e.step(1, acc)
+    expect(e.tick).toBeGreaterThan(tickBefore)
+  })
+  it('loading a save with a malformed destination or activity target repairs it instead of rejecting the world', () => {
+    // The repairable half of the same fix: a bad dest is display-only
+    // and a bad _target just means "pick a fresh goal", so neither
+    // should reject a whole save the way a missing personality must.
+    const e = new SimEngine(42)
+    const acc = { v: 0 }
+    for (let i = 0; i < 100; i++) e.step(1, acc)
+    const snap = JSON.parse(JSON.stringify(e.snapshot()))
+    snap.agents[0].dest = { x: 'far', y: null }
+    snap.agents[0]._target = { state: 'Socializing' }
+    expect(() => e.restore(snap)).not.toThrow()
+    expect(e.agents[0].dest).toBeNull()
+    expect((e.agents[0] as any)._target).toBeUndefined()
+    for (let i = 0; i < 600; i++) e.step(1, acc)
+  })
 })

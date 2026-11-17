@@ -737,6 +737,43 @@ export class SimEngine {
     return JSON.parse(JSON.stringify({ agents: this.agents, memories: this.memories, events, tick: this.tick, simMinutes: this.simMinutes, seed: this.seed, completed: this.completed, interactions: this.interactions, convPairs, lastTalk, lastSocial, lastShop, lastCommute }))
   }
   restore(s: any) {
+    // A corrupt or hand-edited save must be rejected BEFORE it replaces
+    // the live world: WorldSchema only checks that agents is an array of
+    // anything, so an entry with a null personality (or a missing path,
+    // stats, or workplace) passed validation, restore() accepted it, and
+    // step() then threw on the first decision tick reading energyNeed of
+    // null — inside Phaser's update loop, with no alert and no recovery,
+    // while the pre-load world was already gone (doLoad's "corrupted"
+    // alert never fired, because restore itself had not thrown). Validate
+    // every entry up front and throw before mutating anything, so the
+    // load is refused atomically and the current world keeps running.
+    // Only the fields step() reads unconditionally are required: pos is
+    // already repaired by the snap below, home and color are never read
+    // by the engine, and a missing _target just means "pick a fresh goal".
+    if (!Array.isArray(s.agents)) throw new Error('Saved world has no agent list')
+    for (const a of s.agents) {
+      const bad = !a || typeof a !== 'object'
+        || typeof a.id !== 'string' || typeof a.name !== 'string' || typeof a.role !== 'string'
+        || !a.personality || typeof a.personality !== 'object'
+        || !Number.isFinite(a.personality.sociability) || !Number.isFinite(a.personality.energyNeed)
+        || !Number.isFinite(a.personality.curiosity) || !Number.isFinite(a.personality.routine)
+        || !Number.isFinite(a.energy) || !Number.isFinite(a.hunger) || !Number.isFinite(a.mood) || !Number.isFinite(a.confidence)
+        || typeof a.state !== 'string' || !Array.isArray(a.path)
+        || !Number.isFinite(a.activityUntil) || !Number.isFinite(a.cooldownUntil)
+        || typeof a.goal !== 'string' || typeof a.activity !== 'string' || typeof a.intention !== 'string' || typeof a.thought !== 'string'
+        || !Array.isArray(a.recentActions) || !a.relationships || typeof a.relationships !== 'object'
+        || typeof a.workplace !== 'string' || !LOCATIONS.some(l => l.id === a.workplace)
+      if (bad) throw new Error('Saved world has a malformed agent entry')
+      // A malformed destination or activity target is repairable, not
+      // fatal: a bad dest is display-only (the engine only ever writes
+      // it), and a bad _target just means the agent picks a fresh goal
+      // on arrival instead of resuming — both are normalized here so a
+      // hand-edited save with a stale pointer does not reject the whole
+      // world the way a missing personality or path must.
+      if (a.dest !== null && (typeof a.dest !== 'object' || !Number.isFinite(a.dest.x) || !Number.isFinite(a.dest.y))) a.dest = null
+      const t = (a as any)._target
+      if (t !== undefined && (!t || typeof t !== 'object' || !t.loc || typeof t.loc !== 'object' || !t.loc.entrance || !Number.isFinite(t.loc.entrance.x) || !Number.isFinite(t.loc.entrance.y) || typeof t.state !== 'string' || typeof t.activity !== 'string' || !Number.isFinite(t.durationMin))) (a as any)._target = undefined
+    }
     this.agents = s.agents; this.memories = s.memories; this.events = s.events; this.tick = s.tick; this.simMinutes = s.simMinutes; this.completed = s.completed; this.interactions = s.interactions
     // A save can hold an agent position that is no longer walkable: a
     // hand-edited save, or a save from before a map change moved a
