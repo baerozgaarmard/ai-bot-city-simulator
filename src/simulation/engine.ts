@@ -44,6 +44,18 @@ const COLORS = ['#e11d48', '#f59e0b', '#22c55e', '#3b82f6', '#a855f7', '#ec4899'
 const WORKPLACE_BY_ROLE: Record<string, string> = {}
 for (const [, role, , , , , , work] of SEED_AGENTS) WORKPLACE_BY_ROLE[role] ??= work
 
+// Role spellings are matched case-insensitively: the Add Agent form
+// takes free text, so 'chef' or 'BUS DRIVER' missed the verbatim
+// WORKPLACE_BY_ROLE lookup and silently fell back to the office — the
+// same silent-fallback failure the blank-role fix guarded against —
+// and got a hashed fallback sprite instead of the role's palette.
+// The canonical seed spelling is what gets stored, so the registry,
+// role filter and sprite all agree; a genuinely unknown role keeps
+// the typed spelling and the office fallback.
+const ROLE_BY_LOWER: Record<string, string> = {}
+for (const role of Object.keys(WORKPLACE_BY_ROLE)) ROLE_BY_LOWER[role.toLowerCase()] = role
+const canonicalRole = (role: string) => ROLE_BY_LOWER[role.trim().toLowerCase()] ?? role.trim()
+
 let uid = 0
 const nid = (p: string) => `${p}-${++uid}-${Date.now().toString(36)}`
 
@@ -621,7 +633,8 @@ export class SimEngine {
   }
   addAgent(input: { name: string; role: string; personality: Agent['personality']; locationId: string; energy: number; mood: number }) {
     const loc = this.locById(input.locationId)
-    const a: Agent = { id: nid('agent'), name: input.name, role: input.role, color: pick(this.rng, COLORS), personality: input.personality, pos: { ...loc.entrance }, dest: null, path: [], state: 'Idle', activity: 'Arriving', goal: 'Settle in', intention: 'Settle in', thought: 'New in Smallville.', energy: input.energy, hunger: 20, mood: input.mood, sociability: input.personality.sociability, confidence: 60, home: 'residential', workplace: WORKPLACE_BY_ROLE[input.role] ?? 'office', paused: false, activityUntil: 0, cooldownUntil: 0, relationships: {}, recentActions: [] }
+    const role = canonicalRole(input.role)
+    const a: Agent = { id: nid('agent'), name: input.name, role, color: pick(this.rng, COLORS), personality: input.personality, pos: { ...loc.entrance }, dest: null, path: [], state: 'Idle', activity: 'Arriving', goal: 'Settle in', intention: 'Settle in', thought: 'New in Smallville.', energy: input.energy, hunger: 20, mood: input.mood, sociability: input.personality.sociability, confidence: 60, home: 'residential', workplace: WORKPLACE_BY_ROLE[role] ?? 'office', paused: false, activityUntil: 0, cooldownUntil: 0, relationships: {}, recentActions: [] }
     this.lastSocial.set(a.id, this.simMinutes)
     this.lastShop.set(a.id, this.simMinutes)
     this.lastCommute.set(a.id, this.simMinutes)

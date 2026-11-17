@@ -397,6 +397,30 @@ describe('engine', () => {
     expect(chef.state).toBe('Working')
     expect(Math.round(chef.pos.x)).toBe(18); expect(Math.round(chef.pos.y)).toBe(5)
   })
+  it('a newly added agent with a differently cased role still works where its role works', () => {
+    // Regression: WORKPLACE_BY_ROLE was looked up verbatim, so typing
+    // 'chef' or 'BUS DRIVER' in the Add Agent form's free-text
+    // Occupation field silently fell back to the office — a Chef who
+    // walked to the Office Building, a Bus Driver who never went near
+    // the bus stop — and the sprite fell back to a hashed palette
+    // instead of the role's own (no chef's hat). The stored role is
+    // now canonicalized to the seed table's spelling, so casing no
+    // longer changes where the agent works or how it looks; a
+    // genuinely unknown role still keeps its typed spelling and the
+    // office fallback.
+    const e = new SimEngine(5)
+    const mk = (name: string, role: string) => e.addAgent({ name, role, personality: { sociability: 60, energyNeed: 60, curiosity: 60, routine: 50 }, locationId: 'cafe', energy: 80, mood: 70 })
+    const chef = mk('LowerChef', 'chef')
+    expect(chef.role).toBe('Chef')
+    expect(chef.workplace).toBe('restaurant')
+    const driver = mk('UpperDriver', 'BUS DRIVER')
+    expect(driver.role).toBe('Bus Driver')
+    expect(driver.workplace).toBe('bus')
+    expect(mk('MixedBarista', 'bArIsTa').workplace).toBe('cafe')
+    const unknown = mk('LowerUnknown', 'astronaut')
+    expect(unknown.role).toBe('astronaut')
+    expect(unknown.workplace).toBe('office')
+  })
   it('resetting a Conversing agent unwinds the conversation instead of leaving a stale conv entry', () => {
     // Regression: resetAgent left the agent's entry in the conv map, so
     // arrive() would never pick it as a conversation partner again (it
