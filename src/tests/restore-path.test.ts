@@ -1,0 +1,102 @@
+import { describe, it, expect } from 'vitest'
+import { SimEngine } from '../simulation/engine'
+import { walkableGrid, GRID_W, GRID_H } from '../simulation/map'
+
+const drive = (e: SimEngine, minutes: number) => {
+  const acc = { v: 0 }
+  for (let i = 0; i < minutes; i++) e.step(1, acc)
+}
+const onBadTile = (e: SimEngine) => {
+  const grid = walkableGrid()
+  return e.agents.some(a => {
+    const rx = Math.round(a.pos.x), ry = Math.round(a.pos.y)
+    return rx >= 0 && rx < GRID_W && ry >= 0 && ry < GRID_H && !grid[ry][rx]
+  })
+}
+
+describe('restore() repairs a stale saved path', () => {
+  it('a path through a building tile is not followed after load', () => {
+    const e = new SimEngine(42)
+    drive(e, 30)
+    const snap = e.snapshot()
+    // Residential tiles (3..5, 11..12) are non-walkable; (4,11) is one.
+    expect(walkableGrid()[11][4]).toBe(false)
+    const alice = snap.agents[0]
+    alice.pos = { x: 6, y: 12 }
+    alice.path = [{ x: 5, y: 12 }, { x: 4, y: 11 }, { x: 3, y: 11 }]
+    alice.state = 'Walking'
+    alice.dest = { x: 3, y: 11 }
+    const e2 = new SimEngine(99)
+    e2.restore(snap)
+    const acc = { v: 0 }
+    for (let i = 0; i < 120; i++) e2.step(1, acc)
+    expect(onBadTile(e2)).toBe(false)
+    expect(e2.agents[0].state).not.toBe('Walking')
+  })
+
+  it('a path with an out-of-bounds waypoint does not walk the agent off the grid', () => {
+    const e = new SimEngine(42)
+    drive(e, 30)
+    const snap = e.snapshot()
+    const alice = snap.agents[0]
+    alice.pos = { x: 6, y: 12 }
+    alice.path = [{ x: 6, y: 13 }, { x: 6, y: 25 }, { x: 6, y: 40 }]
+    alice.state = 'Walking'
+    alice.dest = { x: 6, y: 40 }
+    const e2 = new SimEngine(99)
+    e2.restore(snap)
+    const a = e2.agents[0]
+    const acc = { v: 0 }
+    for (let i = 0; i < 120; i++) {
+      e2.step(1, acc)
+      expect(a.pos.x).toBeGreaterThanOrEqual(0)
+      expect(a.pos.x).toBeLessThan(GRID_W)
+      expect(a.pos.y).toBeGreaterThanOrEqual(0)
+      expect(a.pos.y).toBeLessThan(GRID_H)
+    }
+    expect(a.state).not.toBe('Walking')
+  })
+
+  it('a stale path to a still-valid destination is re-routed, not dropped', () => {
+    const e = new SimEngine(42)
+    drive(e, 30)
+    const snap = e.snapshot()
+    const alice = snap.agents[0]
+    alice.pos = { x: 6, y: 12 }
+    // Stale route cuts through the residential building; the park
+    // entrance (10,8) is still a valid destination.
+    alice.path = [{ x: 5, y: 12 }, { x: 4, y: 11 }, { x: 10, y: 8 }]
+    alice.state = 'Walking'
+    alice.dest = { x: 10, y: 8 }
+    const e2 = new SimEngine(99)
+    e2.restore(snap)
+    const a = e2.agents[0]
+    // Re-routed on the current grid: every waypoint walkable.
+    expect(a.path.length).toBeGreaterThan(0)
+    const grid = walkableGrid()
+    for (const p of a.path) expect(grid[p.y][p.x]).toBe(true)
+    const acc = { v: 0 }
+    for (let i = 0; i < 300 && (a.path.length || a.state === 'Walking'); i++) e2.step(1, acc)
+    expect(onBadTile(e2)).toBe(false)
+    expect(Math.round(a.pos.x)).toBe(10)
+    expect(Math.round(a.pos.y)).toBe(8)
+  })
+
+  it('a valid saved path is kept as-is', () => {
+    const e = new SimEngine(42)
+    let snap: ReturnType<SimEngine['snapshot']> | null = null
+    let walking: ReturnType<SimEngine['snapshot']>['agents'][number] | null = null
+    for (let m = 0; m < 600 && !walking; m++) {
+      drive(e, 1)
+      const s = e.snapshot()
+      walking = s.agents.find((a: any) => a.state === 'Walking' && a.path.length > 1) ?? null
+      if (walking) snap = s
+    }
+    expect(walking).not.toBeNull()
+    const pathBefore = JSON.stringify(walking!.path)
+    const e2 = new SimEngine(99)
+    e2.restore(snap)
+    const restored = e2.agents.find(a => a.id === walking!.id)!
+    expect(JSON.stringify(restored.path)).toBe(pathBefore)
+  })
+})

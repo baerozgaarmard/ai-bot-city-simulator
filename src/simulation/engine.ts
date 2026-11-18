@@ -821,6 +821,35 @@ export class SimEngine {
       const dest = found ? { x: found[0], y: found[1] } : homeEntrance
       a.pos = { x: dest.x, y: dest.y }
     }
+    // A saved path can hold waypoints that are no longer walkable: a
+    // hand-edited save, or a save from before a map change moved a
+    // building onto a tile the route crossed. restore() used to trust
+    // the path as long as it was an array, so a restored agent walked
+    // straight through the building — or off the grid entirely (a
+    // path to y=40 on a 16-tall map) — and ended up standing on a
+    // tile no agent should ever occupy. The position snap above only
+    // repairs where the agent stands, not where it is heading.
+    // Re-route a walking agent from its (snapped) position to its
+    // destination on the current grid when the saved route is stale;
+    // if there is no valid destination or no route, drop the walk
+    // and let the agent pick a fresh goal on the next decision tick
+    // instead of following a route that no longer exists.
+    for (const a of this.agents) {
+      if (!a.path.length) continue
+      const stale = a.path.some(p => !p || typeof p !== 'object' || !Number.isFinite(p.x) || !Number.isFinite(p.y) || p.y < 0 || p.y >= GRID_H || p.x < 0 || p.x >= GRID_W || !this.grid[p.y][p.x])
+      if (!stale) continue
+      const dest = a.dest
+      const destOk = !!dest && Number.isFinite(dest.x) && Number.isFinite(dest.y) && dest.y >= 0 && dest.y < GRID_H && dest.x >= 0 && dest.x < GRID_W && this.grid[dest.y][dest.x]
+      const fresh = destOk ? astar(this.grid, { x: Math.round(a.pos.x), y: Math.round(a.pos.y) }, dest) : []
+      if (fresh.length) { a.path = fresh; continue }
+      // No valid route: abandon the walk. Clear the destination and
+      // the activity target so the agent does not "arrive" somewhere
+      // it never walked to. A walking agent goes Idle to pick a fresh
+      // goal; any other state keeps its activity in place (a saved
+      // path on a non-walking agent is stray data, not a walk).
+      a.path = []; a.dest = null
+      if (a.state === 'Walking') { (a as any)._target = undefined; a.state = 'Idle'; a.activity = 'Deciding what to do next'; a.activityUntil = 0; a.cooldownUntil = 0 }
+    }
     // The seed is part of the snapshot (and required by WorldSchema), so
     // loading a save must restore it: without this the engine kept its
     // constructor seed (20261028 by default), and a save made after the
