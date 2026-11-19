@@ -736,6 +736,40 @@ describe('engine', () => {
     expect((e as any).lastSocial.get(b.id)).toBeGreaterThan(clockBefore)
     expect((e as any).lastSocial.get(b.id)).toBe(e.simMinutes)
   })
+  it('a Socializing window that expires during the post-conversation cooldown still completes the goal', () => {
+    // Regression: a conversation starting 25-30 minutes into the
+    // 40-minute Socializing window ends with the window expiring
+    // during the 5-minute post-chat Idle cooldown — the release saw
+    // the window still open, so it did not complete the goal, and the
+    // window then passed while the agent stood Idle. The decision
+    // branch only completed a goal when state was not Idle, so it
+    // sent the agent straight to pickGoal: no GOAL event, no
+    // completed++, an empty recentActions, and the loneliness clock
+    // never reset, so the inflated Socialize bonus sent the agent
+    // straight back out after the cooldown. An Idle agent holding a
+    // live activity target must complete it when the window passes.
+    const e = new SimEngine(77); const park = LOCATIONS.find(l => l.id === 'park')!
+    const [a, b] = e.agents
+    for (const ag of e.agents) if (![a, b].includes(ag)) { ag.paused = true; ag.pos = { x: 0, y: 0 }; ag.state = 'Idle'; ag.path = [] }
+    const stage = (ag: any) => {
+      ag.pos = { ...park.entrance }; ag.state = 'Socializing'; ag.path = []; ag.dest = null
+      ag.goal = 'Socialize'; ag.activityUntil = e.simMinutes + 40; ag.cooldownUntil = 0
+      ag._target = { loc: park, state: 'Socializing', activity: 'Socializing', durationMin: 40 }
+    }
+    stage(a); stage(b); (e as any).arrive(a)
+    expect(a.state).toBe('Conversing')
+    // End a's window 3 minutes after the conversation ends, inside
+    // the 5-minute cooldown that follows the release.
+    a.activityUntil = e.simMinutes + 13
+    const clockBefore = (e as any).lastSocial.get(a.id)
+    const acc = { v: 0 }
+    for (let i = 0; i < 11; i++) e.step(1, acc) // past the 10-minute conversation
+    expect(a.state).toBe('Idle')
+    expect(a.activity).toBe('Finished conversation')
+    for (let i = 0; i < 5; i++) e.step(1, acc) // past the window end and the cooldown
+    expect(a.recentActions).toContain('Socialize at Central Park')
+    expect((e as any).lastSocial.get(a.id)).toBeGreaterThan(clockBefore)
+  })
   it('a selection naming an agent that no longer exists shows nothing, not the first agent', () => {
     // Regression: selectedAgent() fell back to agents[0] whenever the
     // selected id matched nothing. Loading a save replaces engine.agents

@@ -607,7 +607,22 @@ export class SimEngine {
           this.complete(a)
         }
         if (!a.path.length && a.state !== 'Conversing' && this.simMinutes >= a.activityUntil && this.simMinutes >= a.cooldownUntil) {
-          if (a.activityUntil > 0 && a.state !== 'Idle') this.complete(a); else this.pickGoal(a)
+          // An Idle agent can still hold a live activity target: the
+          // conversation release leaves the agent Idle with its
+          // Socializing _target and window intact, and a conversation
+          // that starts 25-30 minutes into the 40-minute window ends
+          // with the window expiring during the 5-minute post-chat
+          // cooldown — the release saw the window still open, so it
+          // did not complete the goal, and the window then passed
+          // while the agent stood Idle. The old `state !== 'Idle'`
+          // guard then sent it straight to pickGoal, so the outing
+          // was never recorded: no GOAL event, no completed++, nothing
+          // in recentActions, and the loneliness clock never reset —
+          // the inflated Socialize bonus sent it straight back out.
+          // Complete whenever a target is still live, whatever the
+          // state; an Idle agent with no target (activityUntil 0)
+          // still picks a fresh goal.
+          if (a.activityUntil > 0 && (a.state !== 'Idle' || (a as any)._target)) this.complete(a); else this.pickGoal(a)
         } else if (!a.path.length && a.state === 'Idle' && this.simMinutes >= a.cooldownUntil) {
           // Resume an interrupted Socializing activity instead of
           // picking a new goal: a conversation only paused it, and the
