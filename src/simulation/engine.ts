@@ -787,7 +787,23 @@ export class SimEngine {
       const t = (a as any)._target
       if (t !== undefined && (!t || typeof t !== 'object' || !t.loc || typeof t.loc !== 'object' || !t.loc.entrance || !Number.isFinite(t.loc.entrance.x) || !Number.isFinite(t.loc.entrance.y) || typeof t.state !== 'string' || typeof t.activity !== 'string' || !Number.isFinite(t.durationMin))) (a as any)._target = undefined
     }
-    this.agents = s.agents; this.memories = s.memories; this.events = s.events; this.tick = s.tick; this.simMinutes = s.simMinutes; this.completed = s.completed; this.interactions = s.interactions
+    this.agents = s.agents
+    // Memories and events are z.any() in WorldSchema, so a hand-edited
+    // save can hold a null (or otherwise malformed) entry that passes
+    // validation: the agent check above does not cover them. log()'s
+    // 500-event pruning reads m.sourceEventId and ev.id on every
+    // entry, so the first prune after the load threw a TypeError
+    // inside step() — the same crash-on-corrupt-save failure the agent
+    // validation fixed, just one field over — and the console filter
+    // reads e.message.toLowerCase(), so a malformed event would throw
+    // in render too. Drop malformed rows instead of rejecting the
+    // world: a memory or event is history, not live state, and losing
+    // one bad row beats losing the whole save.
+    const okMemory = (m: any) => m && typeof m === 'object' && typeof m.id === 'string' && typeof m.type === 'string' && typeof m.summary === 'string' && typeof m.ownerId === 'string' && typeof m.sourceEventId === 'string' && Number.isFinite(m.tick) && Number.isFinite(m.importance) && Array.isArray(m.agentIds)
+    const okEvent = (e: any) => e && typeof e === 'object' && typeof e.id === 'string' && typeof e.time === 'string' && typeof e.category === 'string' && typeof e.agentName === 'string' && typeof e.message === 'string'
+    this.memories = Array.isArray(s.memories) ? s.memories.filter(okMemory) : []
+    this.events = Array.isArray(s.events) ? s.events.filter(okEvent) : []
+    this.tick = s.tick; this.simMinutes = s.simMinutes; this.completed = s.completed; this.interactions = s.interactions
     // A save can hold an agent position that is no longer walkable: a
     // hand-edited save, or a save from before a map change moved a
     // building onto that tile. setGoal silently drops the goal when A*
