@@ -881,6 +881,22 @@ export class SimEngine {
       a.path = []; a.dest = null
       if (a.state === 'Walking') { (a as any)._target = undefined; a.state = 'Idle'; a.activity = 'Deciding what to do next'; a.activityUntil = 0; a.cooldownUntil = 0 }
     }
+    // A saved walk with no route at all is the same stale walk: a
+    // hand-edited save (or a save from an older build) can hold state
+    // 'Walking' with an empty path, and live operation never produces
+    // one — setGoal only sets Walking with a non-empty path, and the
+    // movement loop calls arrive() the moment the path empties. The
+    // loop above skips empty paths, so without this the agent stood
+    // frozen "Walking" in place until activityUntil passed, and the
+    // decision tick then completed a goal it never walked to or
+    // arrived at — a phantom "Work at town" in recentActions and a
+    // +1 in the completed count. Drop the walk the same way the
+    // stale-path repair does, so the agent picks a fresh goal on the
+    // next decision tick.
+    for (const a of this.agents) {
+      if (a.state !== 'Walking' || a.path.length) continue
+      a.dest = null; (a as any)._target = undefined; a.state = 'Idle'; a.activity = 'Deciding what to do next'; a.activityUntil = 0; a.cooldownUntil = 0
+    }
     // The seed is part of the snapshot (and required by WorldSchema), so
     // loading a save must restore it: without this the engine kept its
     // constructor seed (20261028 by default), and a save made after the

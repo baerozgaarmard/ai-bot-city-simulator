@@ -99,4 +99,32 @@ describe('restore() repairs a stale saved path', () => {
     const restored = e2.agents.find(a => a.id === walking!.id)!
     expect(JSON.stringify(restored.path)).toBe(pathBefore)
   })
+
+  it('a Walking agent with no path at all is not left frozen mid-walk', () => {
+    const e = new SimEngine(42)
+    drive(e, 30)
+    const snap = e.snapshot()
+    const alice = snap.agents[0]
+    alice.pos = { x: 10, y: 7 }
+    alice.path = []
+    alice.state = 'Walking'
+    alice.goal = 'Work'
+    alice.dest = { x: 14, y: 5 }
+    ;(alice as any)._target = { loc: { id: 'office', name: 'Office Building', entrance: { x: 14, y: 5 } }, state: 'Working', activity: 'Working at Office Building', durationMin: 90 }
+    alice.activityUntil = e.simMinutes + 60
+    const e2 = new SimEngine(99)
+    e2.restore(snap)
+    const a = e2.agents[0]
+    // The walk is abandoned on load: the agent is Idle at its position
+    // and picks a fresh goal, instead of standing frozen "Walking" until
+    // the window passes and then completing a goal it never arrived at.
+    expect(a.state).toBe('Idle')
+    expect(a.activityUntil).toBe(0)
+    expect((a as any)._target).toBeUndefined()
+    drive(e2, 120)
+    // No phantom completion for a workplace the agent never reached.
+    expect(a.recentActions).not.toContain('Work at town')
+    // And the agent actually did things instead of standing still.
+    expect(a.recentActions.length).toBeGreaterThan(0)
+  })
 })
