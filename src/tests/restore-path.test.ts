@@ -100,6 +100,64 @@ describe('restore() repairs a stale saved path', () => {
     expect(JSON.stringify(restored.path)).toBe(pathBefore)
   })
 
+  it('a path on a non-Walking agent is dropped instead of walked after load', () => {
+    const e = new SimEngine(42)
+    drive(e, 30)
+    const snap = e.snapshot()
+    const alice = snap.agents[0]
+    // A valid route on a Working agent: live operation only ever sets
+    // a path together with the Walking state, but a hand-edited save
+    // can hold one — and the stale-path repair above only drops a
+    // route when it is stale or has no destination, so a valid one
+    // survived and the movement loop walked the agent across town
+    // while its state still said "Working".
+    alice.pos = { x: 14, y: 5 }
+    alice.state = 'Working'
+    alice.goal = 'Work'
+    alice.activity = 'Working at Office Building'
+    alice.activityUntil = e.simMinutes + 60
+    alice.dest = { x: 10, y: 8 }
+    alice.path = [{ x: 13, y: 5 }, { x: 12, y: 5 }, { x: 11, y: 5 }, { x: 10, y: 5 }, { x: 10, y: 6 }, { x: 10, y: 7 }, { x: 10, y: 8 }]
+    ;(alice as any)._target = { loc: { id: 'office', name: 'Office Building', entrance: { x: 14, y: 5 } }, state: 'Working', activity: 'Working at Office Building', durationMin: 90 }
+    const e2 = new SimEngine(99)
+    e2.restore(snap)
+    const a = e2.agents[0]
+    expect(a.path.length).toBe(0)
+    drive(e2, 5)
+    // Still working where it works, not walking to the park.
+    expect(a.state).toBe('Working')
+    expect(Math.round(a.pos.x)).toBe(14)
+    expect(Math.round(a.pos.y)).toBe(5)
+  })
+
+  it('a path on an Idle agent is dropped with its destination on load', () => {
+    const e = new SimEngine(42)
+    drive(e, 30)
+    const snap = e.snapshot()
+    const alice = snap.agents[0]
+    alice.state = 'Idle'
+    alice.activity = 'Deciding what to do next'
+    alice.activityUntil = 0
+    alice.cooldownUntil = 0
+    alice.goal = 'Settle in'
+    alice.intention = 'Find a routine'
+    ;(alice as any)._target = undefined
+    alice.path = [{ x: 10, y: 7 }, { x: 10, y: 8 }]
+    alice.dest = { x: 10, y: 8 }
+    const e2 = new SimEngine(99)
+    e2.restore(snap)
+    const a = e2.agents[0]
+    // The stray path is dropped, and an Idle agent never carries a
+    // destination (complete() and the conversation release both clear
+    // it), so the restored agent shows none until it picks a goal.
+    expect(a.path.length).toBe(0)
+    expect(a.dest).toBeNull()
+    drive(e2, 5)
+    expect(a.path.length).toBe(0)
+    // It picks a fresh goal instead of standing still.
+    expect(a.state).not.toBe('Idle')
+  })
+
   it('a Walking agent with no path at all is not left frozen mid-walk', () => {
     const e = new SimEngine(42)
     drive(e, 30)

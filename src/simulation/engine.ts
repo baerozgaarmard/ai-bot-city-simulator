@@ -881,6 +881,27 @@ export class SimEngine {
       a.path = []; a.dest = null
       if (a.state === 'Walking') { (a as any)._target = undefined; a.state = 'Idle'; a.activity = 'Deciding what to do next'; a.activityUntil = 0; a.cooldownUntil = 0 }
     }
+    // A path on an agent that is not Walking is stray data, not a walk:
+    // live operation only ever sets a path together with the Walking
+    // state (setGoal), and arrive() / complete() / resetAgent() all
+    // clear it — but a hand-edited save (or a save from an older build)
+    // can hold a valid route on a Working, Eating or Idle agent, and
+    // the stale-path repair above only drops the route when it is
+    // stale or has no destination. A valid route survived it, so the
+    // movement loop walked the agent across town while its state still
+    // said "Working" — a Working agent at the office entrance (14,5)
+    // walked to the park (10,8) in 5 sim-minutes and then "arrived"
+    // and kept working there. Only Walking agents walk; drop the route
+    // for every other state and let the agent keep its activity in
+    // place. An Idle agent also drops the destination with it: Idle
+    // agents never carry one (complete() and the conversation release
+    // both clear it), so a restored Idle agent must not show one
+    // until it picks its next goal.
+    for (const a of this.agents) {
+      if (a.state === 'Walking' || !a.path.length) continue
+      a.path = []
+      if (a.state === 'Idle') a.dest = null
+    }
     // A saved walk with no route at all is the same stale walk: a
     // hand-edited save (or a save from an older build) can hold state
     // 'Walking' with an empty path, and live operation never produces
