@@ -799,6 +799,30 @@ export class SimEngine {
       // hand-edited save with a stale pointer does not reject the whole
       // world the way a missing personality or path must.
       if (a.dest !== null && (typeof a.dest !== 'object' || !Number.isFinite(a.dest.x) || !Number.isFinite(a.dest.y))) a.dest = null
+      // Finite is not the same as in range: the check above passes
+      // energy 500 or sociability 500, and those values then poison
+      // the restored world — the inspector showed "Energy: 350%"
+      // after 600 sim-minutes (the 0.25/min drain takes days to walk
+      // 500 back to 100), and a sociability-500 agent picked
+      // Socialize at every decision for 3,000 minutes, never working
+      // or eating, because its utility (500 * 0.8) outbid even a
+      // critical-hunger meal (160). Every bounded stat and trait
+      // lives in [0, 100] in live operation (step(), complete() and
+      // setSociability all clamp to it), so clamp a restored agent
+      // to the same range; the top-level sociability copy falls back
+      // to the authoritative personality value when it is not a
+      // finite number at all. Relationship scores are displayed as
+      // v/100 and arrive() only clamps the top, so an out-of-range
+      // score showed as "999/100" and a NaN score stayed NaN
+      // forever (Math.min(100, NaN + 8) is NaN) — clamp finite
+      // scores and drop non-finite ones.
+      const clamp100 = (n: number) => Math.max(0, Math.min(100, n))
+      a.energy = clamp100(a.energy); a.hunger = clamp100(a.hunger); a.mood = clamp100(a.mood); a.confidence = clamp100(a.confidence)
+      a.personality.sociability = clamp100(a.personality.sociability); a.personality.energyNeed = clamp100(a.personality.energyNeed); a.personality.curiosity = clamp100(a.personality.curiosity); a.personality.routine = clamp100(a.personality.routine)
+      a.sociability = Number.isFinite(a.sociability) ? clamp100(a.sociability) : a.personality.sociability
+      for (const [id, v] of Object.entries(a.relationships)) {
+        if (Number.isFinite(v)) a.relationships[id] = clamp100(v as number); else delete a.relationships[id]
+      }
       const t = (a as any)._target
       if (t !== undefined && (!t || typeof t !== 'object' || !t.loc || typeof t.loc !== 'object' || !t.loc.entrance || !Number.isFinite(t.loc.entrance.x) || !Number.isFinite(t.loc.entrance.y) || typeof t.state !== 'string' || typeof t.activity !== 'string' || !Number.isFinite(t.durationMin))) (a as any)._target = undefined
     }
