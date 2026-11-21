@@ -779,6 +779,24 @@ export class SimEngine {
     // already repaired by the snap below, home and color are never read
     // by the engine, and a missing _target just means "pick a fresh goal".
     if (!Array.isArray(s.agents)) throw new Error('Saved world has no agent list')
+    // The counters are assigned unchecked further down, and the agent
+    // validation above never looks at them — but WorldSchema's
+    // z.number() accepts Infinity and -Infinity, so a hand-edited save
+    // with simMinutes Infinity passed the schema gate and loaded: the
+    // clock then read "NaN:NaN" forever (hour is NaN, so Sleep never
+    // fires and no day/night cycle ever runs), simMinutes++ stayed
+    // Infinity, and tick/completed/interactions stuck at Infinity too
+    // — every counter display permanently broken. A negative
+    // simMinutes is the same failure in the other direction: hour -12
+    // makes Sleep score 90 around the clock and the clock reads
+    // "-12:-20" for days. Live operation only ever produces finite
+    // counts >= 0 (simMinutes starts at 480 and only climbs), so
+    // reject anything else here, up front, before anything is mutated
+    // — the same atomic refusal the agent checks give.
+    for (const k of ['tick', 'simMinutes', 'completed', 'interactions'] as const) {
+      if (!Number.isFinite(s[k]) || s[k] < 0) throw new Error('Saved world has malformed counters')
+    }
+    if (typeof s.seed === 'number' && (!Number.isFinite(s.seed) || s.seed < 0)) throw new Error('Saved world has malformed counters')
     const seenIds = new Set<string>()
     for (const a of s.agents) {
       const bad = !a || typeof a !== 'object'
