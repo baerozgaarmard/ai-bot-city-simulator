@@ -32,6 +32,18 @@ const SEED_AGENTS: Array<[string, string, number, number, number, number, string
 ]
 const COLORS = ['#e11d48', '#f59e0b', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6', '#f97316']
 
+// Every state live operation can ever produce. restore() used to accept
+// any string as an agent's state, so a hand-edited save with state
+// 'Dancing' loaded: the agent then stood in a bogus state for the
+// whole activity window (99 minutes in a probe), the exhaustion
+// interrupt never fired for it — it only covers the four known active
+// states — so it sat at 0 energy for 101 of 120 minutes, and when the
+// window passed complete() logged "completed work" for a shift it
+// never worked. A genuine Working agent in the same setup is
+// interrupted after 19 minutes and sent home to rest. A state outside
+// this list is a malformed agent entry, rejected like any other.
+const AGENT_STATES: readonly AgentState[] = ['Idle', 'Walking', 'Commuting', 'Working', 'Eating', 'Resting', 'Socializing', 'Shopping', 'Waiting', 'Sleeping', 'Conversing']
+
 // Where each role works, read off the seed table: a role's workplace is
 // the location its seeded agents work at (Chef -> restaurant, Bus
 // Driver -> bus, Barista -> cafe, ...). addAgent used to hardcode
@@ -805,7 +817,7 @@ export class SimEngine {
         || !Number.isFinite(a.personality.sociability) || !Number.isFinite(a.personality.energyNeed)
         || !Number.isFinite(a.personality.curiosity) || !Number.isFinite(a.personality.routine)
         || !Number.isFinite(a.energy) || !Number.isFinite(a.hunger) || !Number.isFinite(a.mood) || !Number.isFinite(a.confidence)
-        || typeof a.state !== 'string' || !Array.isArray(a.path)
+        || typeof a.state !== 'string' || !AGENT_STATES.includes(a.state) || !Array.isArray(a.path)
         || !Number.isFinite(a.activityUntil) || !Number.isFinite(a.cooldownUntil)
         || typeof a.goal !== 'string' || typeof a.activity !== 'string' || typeof a.intention !== 'string' || typeof a.thought !== 'string'
         || !Array.isArray(a.recentActions) || !a.relationships || typeof a.relationships !== 'object'
