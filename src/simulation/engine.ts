@@ -779,6 +779,7 @@ export class SimEngine {
     // already repaired by the snap below, home and color are never read
     // by the engine, and a missing _target just means "pick a fresh goal".
     if (!Array.isArray(s.agents)) throw new Error('Saved world has no agent list')
+    const seenIds = new Set<string>()
     for (const a of s.agents) {
       const bad = !a || typeof a !== 'object'
         || typeof a.id !== 'string' || typeof a.name !== 'string' || typeof a.role !== 'string'
@@ -792,6 +793,20 @@ export class SimEngine {
         || !Array.isArray(a.recentActions) || !a.relationships || typeof a.relationships !== 'object'
         || typeof a.workplace !== 'string' || !LOCATIONS.some(l => l.id === a.workplace)
       if (bad) throw new Error('Saved world has a malformed agent entry')
+      // Agent ids are the key for everything downstream — resetAgent,
+      // setSociability, the inspector selection, the conversation
+      // timers and the Phaser sprite map all find an agent by id — so
+      // two entries sharing one id silently split the world in two:
+      // actions address only the first twin (a reset left the second
+      // twin Resting while the first went Idle), their conversation
+      // timers overwrite each other in the conv map, and the second
+      // twin never gets a sprite (the scene map already holds the id),
+      // so it walks the city invisible while listed in the registry. A
+      // save can only hold duplicates if it was hand-edited — snapshot
+      // ids are unique by construction — so reject it like any other
+      // malformed entry, before anything is mutated.
+      if (seenIds.has(a.id)) throw new Error('Saved world has a duplicate agent id')
+      seenIds.add(a.id)
       // A malformed destination or activity target is repairable, not
       // fatal: a bad dest is display-only (the engine only ever writes
       // it), and a bad _target just means the agent picks a fresh goal
