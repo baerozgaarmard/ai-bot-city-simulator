@@ -858,6 +858,24 @@ export class SimEngine {
       }
       const t = (a as any)._target
       if (t !== undefined && (!t || typeof t !== 'object' || !t.loc || typeof t.loc !== 'object' || !t.loc.entrance || !Number.isFinite(t.loc.entrance.x) || !Number.isFinite(t.loc.entrance.y) || typeof t.state !== 'string' || typeof t.activity !== 'string' || !Number.isFinite(t.durationMin))) (a as any)._target = undefined
+      // Timers are on the simMinutes timeline: live operation only ever
+      // sets activityUntil up to 120 minutes out (a full night's sleep)
+      // and cooldownUntil up to 5 minutes out (the post-conversation
+      // break). A hand-edited save with activityUntil or cooldownUntil
+      // a million minutes out passed the finite check above and then
+      // stranded the agent — a Resting agent never finished its rest
+      // (Resting has no exhaustion interrupt), an Eating agent never
+      // finished its meal, and an Idle agent never picked a new goal —
+      // while hunger still rose and energy still drained around it. The
+      // same bound applies to a saved activity target's duration:
+      // arrive() turns durationMin into activityUntil, so a
+      // million-minute duration strands the agent exactly the same way.
+      // Clamp all three to the restored timeline (240 / 30 minutes is
+      // twice the live maximum, so no real save is ever touched): a bad
+      // timer can delay an agent by minutes, never strand it for days.
+      if (a.activityUntil > s.simMinutes + 240) a.activityUntil = s.simMinutes + 240
+      if (a.cooldownUntil > s.simMinutes + 30) a.cooldownUntil = s.simMinutes + 30
+      if ((a as any)._target) (a as any)._target.durationMin = Math.max(1, Math.min(240, (a as any)._target.durationMin))
     }
     this.agents = s.agents
     // Memories and events are z.any() in WorldSchema, so a hand-edited
