@@ -869,7 +869,27 @@ export class SimEngine {
         if (Number.isFinite(v)) a.relationships[id] = clamp100(v as number); else delete a.relationships[id]
       }
       const t = (a as any)._target
-      if (t !== undefined && (!t || typeof t !== 'object' || !t.loc || typeof t.loc !== 'object' || !t.loc.entrance || !Number.isFinite(t.loc.entrance.x) || !Number.isFinite(t.loc.entrance.y) || typeof t.state !== 'string' || typeof t.activity !== 'string' || !Number.isFinite(t.durationMin))) (a as any)._target = undefined
+      if (t !== undefined && (!t || typeof t !== 'object' || !t.loc || typeof t.loc !== 'object' || !t.loc.entrance || !Number.isFinite(t.loc.entrance.x) || !Number.isFinite(t.loc.entrance.y) || typeof t.state !== 'string' || !AGENT_STATES.includes(t.state as AgentState) || typeof t.activity !== 'string' || !Number.isFinite(t.durationMin))) (a as any)._target = undefined
+      // A saved activity target names its location by id, but the whole
+      // location object rides along in the save — entrance included — so
+      // a hand-edited entrance can point somewhere the activity never
+      // happens: the path repair below then re-routed the agent to the
+      // edited entrance and arrive() set it Working there, logging a
+      // phantom "completed work" at Central Park for an office shift.
+      // Live targets always reference a real location, so replace the
+      // saved copy with the canonical one; a target naming no real
+      // location is dropped like any other malformed target, and the
+      // agent picks a fresh goal instead of arriving somewhere that
+      // does not exist. The state gets the same check the agent's own
+      // state gets: a _target with state 'Dancing' passed the old
+      // string-only check and arrive() set the agent to it, leaving it
+      // in a bogus state the exhaustion interrupt never covers until
+      // the window passed.
+      else if (t !== undefined) {
+        const real = LOCATIONS.find(l => l.id === t.loc.id)
+        if (!real) (a as any)._target = undefined
+        else (a as any)._target.loc = real
+      }
       // Timers are on the simMinutes timeline: live operation only ever
       // sets activityUntil up to 120 minutes out (a full night's sleep)
       // and cooldownUntil up to 5 minutes out (the post-conversation
@@ -952,14 +972,42 @@ export class SimEngine {
     // if there is no valid destination or no route, drop the walk
     // and let the agent pick a fresh goal on the next decision tick
     // instead of following a route that no longer exists.
+    // A route is also stale when it does not end where the agent is
+    // going, even if every waypoint is walkable: a hand-edited save
+    // can hold a valid route to the park entrance on an agent whose
+    // destination and activity target say the office, and the
+    // waypoint check above passed it — the agent then walked to the
+    // park, arrive() fired with the office target, and it "worked"
+    // at the park for 90 minutes, logging a phantom "completed
+    // work" at Central Park. Live operation never produces that: a
+    // path is built by A* to the destination entrance, so a live
+    // route always ends at dest, and dest always agrees with the
+    // activity target's entrance. A missing destination is the same
+    // failure with no route to re-check against: a valid route on a
+    // Walking agent with dest null was walked to the end and then
+    // "arrived" at the office target while standing at the park.
+    // The activity target's entrance is authoritative for the
+    // arrival — arrive() reads it, not dest — so a route that ends
+    // at dest but not at the target entrance is re-routed to the
+    // target, and dest is updated to match; a route with no target
+    // at all is only held to dest. A real save is never touched:
+    // its routes end at dest, and dest agrees with the target.
     for (const a of this.agents) {
       if (!a.path.length) continue
-      const stale = a.path.some(p => !p || typeof p !== 'object' || !Number.isFinite(p.x) || !Number.isFinite(p.y) || p.y < 0 || p.y >= GRID_H || p.x < 0 || p.x >= GRID_W || !this.grid[p.y][p.x])
-      if (!stale) continue
       const dest = a.dest
       const destOk = !!dest && Number.isFinite(dest.x) && Number.isFinite(dest.y) && dest.y >= 0 && dest.y < GRID_H && dest.x >= 0 && dest.x < GRID_W && this.grid[dest.y][dest.x]
-      const fresh = destOk ? astar(this.grid, { x: Math.round(a.pos.x), y: Math.round(a.pos.y) }, dest) : []
-      if (fresh.length) { a.path = fresh; continue }
+      const t = (a as any)._target
+      const targetEntrance = t?.loc?.entrance
+      const targetOk = !!targetEntrance && Number.isFinite(targetEntrance.x) && Number.isFinite(targetEntrance.y) && targetEntrance.y >= 0 && targetEntrance.y < GRID_H && targetEntrance.x >= 0 && targetEntrance.x < GRID_W && this.grid[targetEntrance.y][targetEntrance.x]
+      const last = a.path[a.path.length - 1]
+      const endsAtDest = destOk && !!last && last.x === dest!.x && last.y === dest!.y
+      const endsAtTarget = !targetOk || (!!last && last.x === targetEntrance.x && last.y === targetEntrance.y)
+      const stale = a.path.some(p => !p || typeof p !== 'object' || !Number.isFinite(p.x) || !Number.isFinite(p.y) || p.y < 0 || p.y >= GRID_H || p.x < 0 || p.x >= GRID_W || !this.grid[p.y][p.x])
+        || !destOk || !endsAtDest || !endsAtTarget
+      if (!stale) continue
+      const goal = targetOk ? targetEntrance : destOk ? dest : null
+      const fresh = goal ? astar(this.grid, { x: Math.round(a.pos.x), y: Math.round(a.pos.y) }, goal) : []
+      if (fresh.length) { a.path = fresh; if (targetOk) a.dest = { ...targetEntrance }; continue }
       // No valid route: abandon the walk. Clear the destination and
       // the activity target so the agent does not "arrive" somewhere
       // it never walked to. A walking agent goes Idle to pick a fresh
