@@ -65,4 +65,29 @@ describe('restore() clamps out-of-range stats', () => {
     e.restore(snap)
     expect(e.agents.map(a => [a.energy, a.hunger, a.mood, a.confidence, a.personality.sociability])).toEqual(before)
   })
+  it('a save whose display sociability disagrees with personality loads with the two in sync', () => {
+    const src = new SimEngine(42)
+    const snap: any = src.snapshot()
+    snap.agents[0].sociability = 20
+    snap.agents[0].personality.sociability = 80
+    const e = new SimEngine(7)
+    e.restore(snap)
+    // Personality is the value pickGoal reads; the inspector shows the
+    // top-level copy. Before the fix the copy kept its edited 20 while
+    // the agent behaved as an 80.
+    expect(e.agents[0].sociability).toBe(80)
+    expect(e.agents[0].personality.sociability).toBe(80)
+  })
+  it('a save with a non-boolean paused flag loads with a real boolean and the agent runs', () => {
+    const src = new SimEngine(42)
+    const snap: any = src.snapshot()
+    snap.agents[0].paused = 'yes'
+    const e = new SimEngine(7)
+    e.restore(snap)
+    expect(e.agents[0].paused).toBe(false)
+    // Before the fix the truthy string froze the agent: step() skips
+    // any agent whose paused flag is truthy, so it sat Idle forever.
+    drive(e, 120)
+    expect(e.agents[0].state).not.toBe('Idle')
+  })
 })

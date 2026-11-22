@@ -864,7 +864,22 @@ export class SimEngine {
       const clamp100 = (n: number) => Math.max(0, Math.min(100, n))
       a.energy = clamp100(a.energy); a.hunger = clamp100(a.hunger); a.mood = clamp100(a.mood); a.confidence = clamp100(a.confidence)
       a.personality.sociability = clamp100(a.personality.sociability); a.personality.energyNeed = clamp100(a.personality.energyNeed); a.personality.curiosity = clamp100(a.personality.curiosity); a.personality.routine = clamp100(a.personality.routine)
-      a.sociability = Number.isFinite(a.sociability) ? clamp100(a.sociability) : a.personality.sociability
+      // The top-level sociability is a display copy of the personality
+      // value: pickGoal reads personality.sociability, the inspector
+      // shows the top-level one, and setSociability keeps the two in
+      // sync. The old fallback only synced when the copy was not a
+      // finite number, so a hand-edited save with sociability 20
+      // against personality 80 loaded with the two disagreeing — the
+      // panel showed "Sociability: 20%" for an agent whose goals were
+      // chosen as if it were 80. Personality is authoritative; the
+      // copy always takes its value. A real save is never touched:
+      // live operation keeps the two equal.
+      a.sociability = a.personality.sociability
+      // step() skips any agent whose paused flag is truthy, so a
+      // hand-edited save with paused: "yes" froze the agent forever —
+      // Idle, no goal, no drain, nothing ever unpausing it. Live
+      // operation only ever writes a boolean, so coerce to one.
+      a.paused = a.paused === true
       for (const [id, v] of Object.entries(a.relationships)) {
         if (Number.isFinite(v)) a.relationships[id] = clamp100(v as number); else delete a.relationships[id]
       }
