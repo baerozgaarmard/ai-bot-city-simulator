@@ -37,6 +37,9 @@ describe('restore() rejects malformed world counters', () => {
       { completed: Infinity },
       { interactions: -Infinity },
       { seed: Infinity },
+      { tick: 3.5 },
+      { simMinutes: 480.5 },
+      { completed: 12.25 },
     ]) {
       const snap: any = src.snapshot()
       Object.assign(snap, bad)

@@ -790,7 +790,16 @@ export class SimEngine {
     // Only the fields step() reads unconditionally are required: pos is
     // already repaired by the snap below, home and color are never read
     // by the engine, and a missing _target just means "pick a fresh goal".
-    if (!Array.isArray(s.agents)) throw new Error('Saved world has no agent list')
+    // A world with no agents is not a world: live operation always
+    // holds at least one (24 seeded, addAgent only ever adds), so an
+    // empty list can only come from a hand-edited save — and loading
+    // it silently wiped the live city to zero agents, ticked on with
+    // nothing in it, and told the user "World loaded." The 24 agents
+    // and all their state were gone from the session; only a page
+    // reload (losing everything since the last good save) brought
+    // them back. Refuse it like a missing list, before anything is
+    // mutated.
+    if (!Array.isArray(s.agents) || s.agents.length === 0) throw new Error('Saved world has no agent list')
     // The counters are assigned unchecked further down, and the agent
     // validation above never looks at them — but WorldSchema's
     // z.number() accepts Infinity and -Infinity, so a hand-edited save
@@ -806,7 +815,13 @@ export class SimEngine {
     // reject anything else here, up front, before anything is mutated
     // — the same atomic refusal the agent checks give.
     for (const k of ['tick', 'simMinutes', 'completed', 'interactions'] as const) {
-      if (!Number.isFinite(s[k]) || s[k] < 0) throw new Error('Saved world has malformed counters')
+      // Counters are whole numbers in live operation — tick++ and
+      // simMinutes++ advance them one at a time — so a fractional
+      // value can only come from a hand-edited save, and it shows:
+      // simMinutes 480.5 loaded fine and the clock read "08:0.5"
+      // until the next whole minute ticked over. Refuse fractions
+      // with the other malformed counters.
+      if (!Number.isInteger(s[k]) || s[k] < 0) throw new Error('Saved world has malformed counters')
     }
     if (typeof s.seed === 'number' && (!Number.isFinite(s.seed) || s.seed < 0)) throw new Error('Saved world has malformed counters')
     const seenIds = new Set<string>()
