@@ -317,7 +317,14 @@ export class SimEngine {
       // conversation stretched to a 17-minute Conversing streak, with a
       // new partner and no Idle break. A Conversing agent is already
       // talking; it must be released first, never re-paired.
-      const other = this.agents.find(o => o.id !== a.id && Math.round(o.pos.x) === loc.entrance.x && Math.round(o.pos.y) === loc.entrance.y && o.state === 'Socializing' && !this.conv.has(o.id) && !this.talkedRecently(a.id, o.id) && !this.talkedRecently(o.id, a.id))
+      // A paused agent is not eligible either: pausing from the
+      // inspector is meant to freeze the agent, but arrive() paired a
+      // paused Socializing agent standing at the entrance — its state
+      // flipped to Conversing while paused, the interactions count
+      // rose, and it stayed Conversing with a stale conv entry until
+      // the user resumed it, while its partner's conversation had
+      // already ended. A frozen agent cannot hold a conversation.
+      const other = this.agents.find(o => o.id !== a.id && Math.round(o.pos.x) === loc.entrance.x && Math.round(o.pos.y) === loc.entrance.y && o.state === 'Socializing' && !o.paused && !this.conv.has(o.id) && !this.talkedRecently(a.id, o.id) && !this.talkedRecently(o.id, a.id))
       if (other) {
         const summary = `${a.name} and ${other.name} talked at ${loc.name} about their day.`
         // Memories link back to the event that created them, so use the
