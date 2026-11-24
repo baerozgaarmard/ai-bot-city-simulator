@@ -1039,8 +1039,24 @@ export class SimEngine {
       const last = a.path[a.path.length - 1]
       const endsAtDest = destOk && !!last && last.x === dest!.x && last.y === dest!.y
       const endsAtTarget = !targetOk || (!!last && last.x === targetEntrance.x && last.y === targetEntrance.y)
+      // A route is also stale when it does not start where the agent is
+      // standing, even if every waypoint is walkable and it ends at the
+      // right destination: live operation builds the route from the
+      // agent's own tile, so path[0] is always the adjacent tile (or
+      // the tile the agent already stands on). A hand-edited save can
+      // hold a valid route to the right destination that starts across
+      // town — and the movement loop then walks the agent in a straight
+      // line to that first waypoint, through whatever is in between: an
+      // agent restored at the cafe (6,3) with a route starting at the
+      // restaurant (18,5) crossed the office building and stood on tile
+      // (15,4), which no agent should ever occupy. The position snap
+      // above already fixed where the agent stands; re-route from there
+      // like any other stale route. A real save is never touched: its
+      // routes always start adjacent to the agent.
+      const first = a.path[0]
+      const startsAtAgent = !!first && Math.abs(first.x - Math.round(a.pos.x)) + Math.abs(first.y - Math.round(a.pos.y)) <= 1
       const stale = a.path.some(p => !p || typeof p !== 'object' || !Number.isFinite(p.x) || !Number.isFinite(p.y) || p.y < 0 || p.y >= GRID_H || p.x < 0 || p.x >= GRID_W || !this.grid[p.y][p.x])
-        || !destOk || !endsAtDest || !endsAtTarget
+        || !destOk || !endsAtDest || !endsAtTarget || !startsAtAgent
       if (!stale) continue
       const goal = targetOk ? targetEntrance : destOk ? dest : null
       const fresh = goal ? astar(this.grid, { x: Math.round(a.pos.x), y: Math.round(a.pos.y) }, goal) : []
