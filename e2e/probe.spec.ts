@@ -1,4 +1,22 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page, type Dialog } from '@playwright/test'
+
+// Wait for the next alert/confirm dialog, accepting it the moment it
+// fires, and return its message. A fixed waitForTimeout after the click
+// is racy — the save alert only fires after the async IndexedDB write,
+// and on a loaded machine (parallel workers, cold dev server) the click
+// can land while the main thread is still building Phaser textures, so
+// the alert arrived after the sleep and the test failed with no dialog
+// seen, even though the save had worked. And waitForEvent('dialog')
+// alone deadlocks: Playwright holds the click action until the dialog
+// is handled, but nothing handles it until the click returns — the
+// IndexedDB-failure test hung the click for the full 30s that way,
+// because its failure alert fires synchronously with the click.
+function waitForDialog(page: Page): Promise<string> {
+  return new Promise<string>((resolve) => {
+    const handler = (d: Dialog) => { page.off('dialog', handler); d.accept(); resolve(d.message()) }
+    page.on('dialog', handler)
+  })
+}
 
 test('save/load round-trip keeps the world and add-agent validation works', async ({ page }) => {
   const errors: string[] = []
@@ -8,7 +26,6 @@ test('save/load round-trip keeps the world and add-agent validation works', asyn
   await expect(page.getByText('Alice').first()).toBeVisible()
 
   // Add an agent (inputs inside the dialog, not the registry search box)
-  page.on('dialog', (d) => d.accept())
   await page.getByRole('button', { name: 'Add Agent' }).click()
   const dialog = page.getByRole('dialog')
   await dialog.locator('input').first().fill('Zoe Probe')
@@ -27,10 +44,12 @@ test('save/load round-trip keeps the world and add-agent validation works', asyn
   await page.getByRole('button', { name: 'Cancel' }).click()
 
   // Save then Load
+  const saveDialog = waitForDialog(page)
   await page.getByRole('button', { name: 'Save' }).click()
-  await page.waitForTimeout(500)
+  await saveDialog
+  const loadDialog = waitForDialog(page)
   await page.getByRole('button', { name: 'Load' }).click()
-  await page.waitForTimeout(500)
+  await loadDialog
   await expect(page.getByText('Zoe Probe').first()).toBeVisible()
 
   // Pause button toggles
@@ -69,11 +88,9 @@ test('save still works when localStorage is unavailable', async ({ page }) => {
   })
   await page.goto('/')
   await expect(page.getByText('Alice').first()).toBeVisible()
-  let dialogText = ''
-  page.on('dialog', (d) => { dialogText = d.message(); d.accept() })
+  const dialogSeen = waitForDialog(page)
   await page.getByRole('button', { name: 'Save' }).click()
-  await page.waitForTimeout(500)
-  expect(dialogText).toBe('World saved locally (IndexedDB).')
+  expect(await dialogSeen).toBe('World saved locally (IndexedDB).')
   expect(errors).toEqual([])
 })
 
@@ -92,10 +109,8 @@ test('save reports the failure when IndexedDB is unavailable', async ({ page }) 
   })
   await page.goto('/')
   await expect(page.getByText('Alice').first()).toBeVisible()
-  let dialogText = ''
-  page.on('dialog', (d) => { dialogText = d.message(); d.accept() })
+  const dialogSeen = waitForDialog(page)
   await page.getByRole('button', { name: 'Save' }).click()
-  await page.waitForTimeout(500)
-  expect(dialogText).toMatch(/could not be saved/i)
+  expect(await dialogSeen).toMatch(/could not be saved/i)
   expect(errors).toEqual([])
 })
