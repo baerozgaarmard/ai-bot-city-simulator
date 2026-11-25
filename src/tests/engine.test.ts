@@ -151,6 +151,9 @@ describe('engine', () => {
     const e = new SimEngine(1234)
     const park = LOCATIONS.find(l => l.id === 'park')!
     const [a, b] = e.agents
+    // Park everyone else so no third agent can pair with a or b while
+    // the pair under test is being staged.
+    for (const o of e.agents.slice(2)) { o.paused = true; o.pos = { x: 0, y: 0 }; o.state = 'Idle'; o.path = [] }
     for (const agent of [b, a]) {
       agent.pos = { ...park.entrance }; agent.state = 'Idle'; agent.path = []; agent.dest = null
       agent.activityUntil = 0; agent.cooldownUntil = 0
@@ -583,7 +586,15 @@ describe('engine', () => {
     expect((e2 as any).conv.size).toBe(0)
     // Once the 30-minute window passes, the pair may talk again.
     e2.agents = e2.agents.slice(0, 2) // only the pair left, so no passer-by can pair mid-wait
+    // Freeze the pair for the wait: with the tick-level pairing retry
+    // they would re-form the moment the window expires if they happened
+    // to be Socializing at the same entrance, and the next release
+    // would start a fresh 30-minute block — the wait must measure the
+    // saved window expiring, not a new one. Pausing freezes the agents
+    // while simMinutes (and the window) still advances.
+    a2.paused = true; b2.paused = true
     for (let i = 0; i < 31; i++) e2.step(1, acc)
+    a2.paused = false; b2.paused = false
     stage(e2, a2); stage(e2, b2); (e2 as any).arrive(a2)
     expect(a2.state).toBe('Conversing'); expect(b2.state).toBe('Conversing')
   })
@@ -1283,6 +1294,12 @@ describe('engine', () => {
     const e = new SimEngine(1234)
     const park = LOCATIONS.find(l => l.id === 'park')!
     const [a, b] = e.agents
+    // Park everyone else so the only possible partner is each other:
+    // with the tick-level pairing retry, a third agent already standing
+    // at the park would pair with a resuming agent — the behaviour
+    // under test elsewhere, not what this test measures (dest on
+    // release and resume).
+    for (const o of e.agents.slice(2)) { o.paused = true; o.pos = { x: 0, y: 0 }; o.state = 'Idle'; o.path = [] }
     for (const agent of [b, a]) {
       agent.pos = { ...park.entrance }; agent.state = 'Idle'; agent.path = []; agent.dest = null
       agent.activityUntil = 0; agent.cooldownUntil = 0

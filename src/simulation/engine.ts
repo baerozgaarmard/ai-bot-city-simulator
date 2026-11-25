@@ -1,6 +1,6 @@
 import { astar } from './pathfinding'
 import { mulberry32, pick } from './rng'
-import { LOCATIONS, walkableGrid, GRID_W, GRID_H } from './map'
+import { LOCATIONS, walkableGrid, GRID_W, GRID_H, locationAt } from './map'
 import type { Agent, AgentState, Location, Memory, SimEvent } from './types'
 
 const SEED_AGENTS: Array<[string, string, number, number, number, number, string, string]> = [
@@ -300,46 +300,65 @@ export class SimEngine {
     const [goal, loc, state, activity, dur] = candidates[0]
     this.setGoal(a, goal, loc, state, activity, dur)
   }
+  /** Proximity interaction: pair a Socializing agent standing at a
+   * location entrance with another Socializing agent at the same
+   * entrance. arrive() used to be the only caller, so pairing only
+   * ever happened the moment an agent walked in — an agent that
+   * reached the entrance any other way never paired at all: after a
+   * conversation ended both ex-partners resumed Socializing at the
+   * same entrance and stood there in silence for the rest of their
+   * windows, a restored Socializing agent never talked to the agent
+   * already standing there, and an unpaused agent never talked to
+   * the one that arrived while it was paused. In a 10k-minute probe
+   * 731 agent-minutes were spent with two or more unblocked agents
+   * Socializing at one entrance and nobody Conversing — 17% of all
+   * social agent-minutes. The decision tick now retries the pairing
+   * for any Socializing agent standing at an entrance, so co-located
+   * agents talk within a minute of ending up together. The guards
+   * are unchanged, so ex-partners still cannot instantly re-form
+   * (the 30-minute no-repeat window) and the 5-minute
+   * post-conversation break still holds (the agent is Idle during
+   * it, not Socializing).
+   * Only Socializing agents are eligible partners. A Conversing agent
+   * always holds a conv entry in live operation, so the old
+   * Conversing branch could only match a desynced one — e.g. after
+   * restore() cleared the conv map, when the agent is still flagged
+   * Conversing until the next decision tick's guard releases it.
+   * Pairing it here re-started its timer mid-conversation in the
+   * movement phase, before that guard could run: a 10-minute
+   * conversation stretched to a 17-minute Conversing streak, with a
+   * new partner and no Idle break. A Conversing agent is already
+   * talking; it must be released first, never re-paired.
+   * A paused agent is not eligible either: pausing from the
+   * inspector is meant to freeze the agent, but arrive() paired a
+   * paused Socializing agent standing at the entrance — its state
+   * flipped to Conversing while paused, the interactions count
+   * rose, and it stayed Conversing with a stale conv entry until
+   * the user resumed it, while its partner's conversation had
+   * already ended. A frozen agent cannot hold a conversation. */
+  private tryPair(a: Agent, loc: Location) {
+    const other = this.agents.find(o => o.id !== a.id && Math.round(o.pos.x) === loc.entrance.x && Math.round(o.pos.y) === loc.entrance.y && o.state === 'Socializing' && !o.paused && !this.conv.has(o.id) && !this.talkedRecently(a.id, o.id) && !this.talkedRecently(o.id, a.id))
+    if (!other) return
+    const summary = `${a.name} and ${other.name} talked at ${loc.name} about their day.`
+    // Memories link back to the event that created them, so use the
+    // id of the event log() just created. A separately generated id
+    // used to be passed here instead, so every conversation memory's
+    // sourceEventId named an event that never existed in engine.events.
+    const ev = this.log('SOCIAL', a, loc, summary)
+    this.conv.set(a.id, { other: other.id, until: this.simMinutes + 10 }); this.conv.set(other.id, { other: a.id, until: this.simMinutes + 10 })
+    a.state = 'Conversing'; other.state = 'Conversing'; this.interactions++
+    this.addMemory(a, 'episodic', summary, 7, 1, [other.id], loc, ev.id, ['social', loc.id])
+    this.addMemory(other, 'episodic', summary, 7, 1, [a.id], loc, ev.id, ['social', loc.id])
+    a.relationships[other.id] = Math.min(100, (a.relationships[other.id] ?? 50) + 8); other.relationships[a.id] = Math.min(100, (other.relationships[a.id] ?? 50) + 8)
+    this.addMemory(a, 'relationship', `Relationship with ${other.name} improved after talking at ${loc.name}.`, 5, 1, [other.id], loc, ev.id, ['relationship'])
+  }
   private arrive(a: Agent) {
     const t: any = (a as any)._target; if (!t) { a.state = 'Idle'; return }
     const loc: Location = t.loc
     a.state = t.state; a.activity = t.activity; a.activityUntil = this.simMinutes + t.durationMin; a.thought = `${t.activity} at ${loc.name}.`
     this.log('MOVEMENT', a, loc, `${a.name} arrived at ${loc.name} to ${a.goal.toLowerCase()}.`)
     // Proximity interaction: pair with another socializing agent at same entrance
-    if (t.state === 'Socializing') {
-      // Only Socializing agents are eligible partners. A Conversing agent
-      // always holds a conv entry in live operation, so the old
-      // Conversing branch could only match a desynced one — e.g. after
-      // restore() cleared the conv map, when the agent is still flagged
-      // Conversing until the next decision tick's guard releases it.
-      // Pairing it here re-started its timer mid-conversation in the
-      // movement phase, before that guard could run: a 10-minute
-      // conversation stretched to a 17-minute Conversing streak, with a
-      // new partner and no Idle break. A Conversing agent is already
-      // talking; it must be released first, never re-paired.
-      // A paused agent is not eligible either: pausing from the
-      // inspector is meant to freeze the agent, but arrive() paired a
-      // paused Socializing agent standing at the entrance — its state
-      // flipped to Conversing while paused, the interactions count
-      // rose, and it stayed Conversing with a stale conv entry until
-      // the user resumed it, while its partner's conversation had
-      // already ended. A frozen agent cannot hold a conversation.
-      const other = this.agents.find(o => o.id !== a.id && Math.round(o.pos.x) === loc.entrance.x && Math.round(o.pos.y) === loc.entrance.y && o.state === 'Socializing' && !o.paused && !this.conv.has(o.id) && !this.talkedRecently(a.id, o.id) && !this.talkedRecently(o.id, a.id))
-      if (other) {
-        const summary = `${a.name} and ${other.name} talked at ${loc.name} about their day.`
-        // Memories link back to the event that created them, so use the
-        // id of the event log() just created. A separately generated id
-        // used to be passed here instead, so every conversation memory's
-        // sourceEventId named an event that never existed in engine.events.
-        const ev = this.log('SOCIAL', a, loc, summary)
-        this.conv.set(a.id, { other: other.id, until: this.simMinutes + 10 }); this.conv.set(other.id, { other: a.id, until: this.simMinutes + 10 })
-        a.state = 'Conversing'; other.state = 'Conversing'; this.interactions++
-        this.addMemory(a, 'episodic', summary, 7, 1, [other.id], loc, ev.id, ['social', loc.id])
-        this.addMemory(other, 'episodic', summary, 7, 1, [a.id], loc, ev.id, ['social', loc.id])
-        a.relationships[other.id] = Math.min(100, (a.relationships[other.id] ?? 50) + 8); other.relationships[a.id] = Math.min(100, (other.relationships[a.id] ?? 50) + 8)
-        this.addMemory(a, 'relationship', `Relationship with ${other.name} improved after talking at ${loc.name}.`, 5, 1, [other.id], loc, ev.id, ['relationship'])
-      }
-    }
+    if (t.state === 'Socializing') this.tryPair(a, loc)
   }
   private complete(a: Agent) {
     const loc = LOCATIONS.find(l => l.entrance.x === Math.round(a.pos.x) && l.entrance.y === Math.round(a.pos.y))
@@ -661,6 +680,17 @@ export class SimEngine {
             // park is at its destination, not destination-less.
             a.state = 'Socializing'; a.activity = t.activity; a.thought = `${t.activity} at ${t.loc.name}.`; a.dest = { ...t.loc.entrance }
           } else this.pickGoal(a)
+        }
+        // Pairing is not only an arrival event (see tryPair): an agent
+        // that ends up Socializing at an entrance without arriving —
+        // resuming after a conversation, restored from a save, unpaused
+        // by the user — retries here, once a sim minute, so co-located
+        // agents talk instead of standing together in silence.
+        // locationAt guards the position: a restored agent snapped to
+        // a tile that is not an entrance has nowhere to pair from.
+        if (!a.path.length && a.state === 'Socializing') {
+          const at = locationAt(a.pos)
+          if (at) this.tryPair(a, at)
         }
       }
     }
