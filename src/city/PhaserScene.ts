@@ -201,6 +201,19 @@ export class PhaserScene extends Phaser.Scene {
       if (liveIds.has(id)) continue
       o.sprite.destroy(); o.shadow.destroy(); o.ring.destroy(); o.label.destroy()
       this.agentObjs.delete(id)
+      // Free the agent's generated textures too: makeSpriteTextures
+      // registers 16 of them per agent (4 dirs x 4 frames) in the
+      // Texture Manager, and destroying the sprite does not unregister
+      // them — loading a save that drops agents left 16 orphan
+      // textures per pruned agent behind (384 -> 544 agent textures
+      // over 10 add/load cycles in a probe), growing texture memory
+      // for the whole session. Regeneration is safe: makeSpriteTextures
+      // re-creates any missing key if the agent comes back in a later
+      // load.
+      for (const dir of ['down', 'up', 'left', 'right'] as const) for (const frame of ['idle', 'idleB', 'walkA', 'walkB'] as const) {
+        const key = `agent-${id}-${dir}-${frame}`
+        if (this.textures.exists(key)) this.textures.remove(key)
+      }
       if (ui.selectedId === id) this.pathG?.clear()
     }
     for (const a of engine.agents) {

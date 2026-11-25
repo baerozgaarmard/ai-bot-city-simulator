@@ -114,3 +114,47 @@ test('save reports the failure when IndexedDB is unavailable', async ({ page }) 
   expect(await dialogSeen).toMatch(/could not be saved/i)
   expect(errors).toEqual([])
 })
+
+test('loading a save that drops agents frees their generated textures', async ({ page }) => {
+  test.setTimeout(180000)
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
+  // Regression: the ghost-sprite prune destroyed the sprite, shadow,
+  // ring and label of an agent that no longer exists after a load, but
+  // never removed the 16 textures makeSpriteTextures registered for it
+  // (4 dirs x 4 frames) — destroying a sprite does not unregister its
+  // textures from Phaser's Texture Manager. Ten add-agent + load-old-
+  // save cycles grew agent textures 384 -> 544, leaking GPU texture
+  // memory for the whole session. The prune loop now removes them.
+  // The live scene is reached through the app's own module graph: the
+  // dev server serves /src modules from the same origin, so a dynamic
+  // import returns the same module instance the app uses.
+  const agentTexCount = () => page.evaluate(async () => {
+    const m = await import('/src/city/PhaserScene.ts')
+    const scene: any = m.getScene()
+    return scene.textures.getTextureKeys().filter((k: string) => k.startsWith('agent-')).length
+  })
+  await page.goto('/')
+  await expect(page.getByText('Alice').first()).toBeVisible()
+  await page.waitForTimeout(2000) // let the scene create and run frames
+  let d = waitForDialog(page)
+  await page.getByRole('button', { name: 'Save' }).click()
+  await d // baseline save: the 24 seeded agents only
+  const before = await agentTexCount()
+  expect(before).toBe(24 * 16)
+  for (let i = 0; i < 10; i++) {
+    await page.getByRole('button', { name: 'Add Agent' }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.locator('input').first().fill(`Leak${i}`)
+    await page.getByRole('button', { name: 'Create Agent' }).click()
+    await expect(page.getByText(`Leak${i}`).first()).toBeVisible()
+    await page.waitForTimeout(500) // let a frame run so ensureAgent creates the textures
+    d = waitForDialog(page)
+    await page.getByRole('button', { name: 'Load' }).click()
+    await d
+    await expect(page.getByText(`Leak${i}`).first()).toBeHidden({ timeout: 5000 })
+  }
+  expect(await agentTexCount()).toBe(before)
+  expect(errors).toEqual([])
+})
