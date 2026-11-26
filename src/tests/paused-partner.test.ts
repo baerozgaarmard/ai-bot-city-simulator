@@ -46,6 +46,51 @@ const stagePair = (e: SimEngine, paused: boolean) => {
 }
 
 describe('a paused agent is never paired into a conversation', () => {
+  it('a paused Conversing agent whose conversation timers were cleared by a load is released instead of standing Conversing forever', () => {
+    const e = new SimEngine(42)
+    drive(e, 5)
+    const { a, b } = stagePair(e, false)
+    const acc = { v: 0 }
+    e.step(1, acc)
+    expect(a.state).toBe('Conversing')
+    expect(b.state).toBe('Conversing')
+    // The user pauses A mid-conversation, then loads a save: restore()
+    // clears the live conv timers, so A is Conversing with no conv entry.
+    // The release guard never ran for a paused agent — step() skips them
+    // entirely — so A stood Conversing, bouncing in place, until the user
+    // resumed it, long after B had moved on (a chaos probe held it for
+    // 500+ sim-minutes on seed 777).
+    a.paused = true
+    e.restore(JSON.parse(JSON.stringify(e.snapshot())))
+    const reloaded = e.agents.find(x => x.id === a.id)!
+    expect(reloaded.state).toBe('Conversing')
+    expect(reloaded.paused).toBe(true)
+    expect((e as any).conv.has(reloaded.id)).toBe(false)
+    drive(e, 600)
+    expect(reloaded.state).not.toBe('Conversing')
+    expect(reloaded.state).toBe('Idle')
+    expect(reloaded.activity).toBe('Finished conversation')
+  })
+
+  it('a paused Conversing agent is released once its timer expires, even while still paused', () => {
+    const e = new SimEngine(42)
+    drive(e, 5)
+    const { a, b } = stagePair(e, false)
+    const acc = { v: 0 }
+    e.step(1, acc)
+    expect(a.state).toBe('Conversing')
+    // Pause A mid-conversation with its timer still live: the chat stays
+    // frozen while the timer runs.
+    a.paused = true
+    drive(e, 5)
+    expect(a.state).toBe('Conversing')
+    // B's timer fires and B leaves; A's entry is now expired, but the
+    // release guard never ran for a paused agent, so A kept displaying
+    // a conversation that had already ended.
+    drive(e, 10)
+    expect(a.state).not.toBe('Conversing')
+    expect(a.state).toBe('Idle')
+  })
   it('an arriving agent does not pair with a paused agent at the same entrance', () => {
     const e = new SimEngine(42)
     drive(e, 5)

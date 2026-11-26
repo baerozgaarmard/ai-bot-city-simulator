@@ -426,6 +426,80 @@ export class SimEngine {
     a.goal = 'Settle in'; a.intention = 'Find a routine'; a.thought = 'Deciding what to do next.'
     a.cooldownUntil = this.simMinutes + 2; a.state = 'Idle'; a.activity = 'Deciding what to do next'; a.dest = null; a.path = []; a.activityUntil = 0; (a as any)._target = undefined
   }
+  /** Release a conversation whose timer is gone or expired. Returns true
+   * when it released the agent.
+   * A Conversing agent with no conv entry is desynced — this happens
+   * after snapshot/restore, because the conv timer map is not part of
+   * the saved snapshot. Without this it stays Conversing forever:
+   * the decision branches below both skip Conversing agents, and no
+   * timer ever fires to release it.
+   * The same "forever" applied to a PAUSED agent: step() skips paused
+   * agents entirely, so a paused Conversing agent whose partner left —
+   * or whose timers a load cleared — kept displaying a conversation
+   * that had already ended, bouncing in place until the user resumed
+   * it (a chaos probe held one for 500+ sim-minutes on seed 777).
+   * step() therefore calls this for paused agents too, before skipping
+   * them. Only a missing or expired timer releases: pausing
+   * mid-conversation still freezes the chat while it is live. */
+  private releaseConversation(a: Agent): boolean {
+    if (a.state !== 'Conversing') return false
+    const conv = this.conv.get(a.id)
+    if (conv && this.simMinutes < conv.until) return false
+    // Remember the ex-partner so the pair cannot instantly re-form:
+    // both are still standing at the same entrance, and without
+    // this the next pickGoal can re-pick Socialize there, arrive
+    // instantly and pair them again in the same tick they split.
+    if (conv) this.blockRePair(a.id, conv.other, this.simMinutes + 30)
+    // Visible break after a conversation: without a cooldown the
+    // released agent instantly re-picks Socialize at the same
+    // entrance, arrives instantly (already there) and pairs with
+    // the next agent standing there — chaining distinct 10-minute
+    // conversations into one unbroken 20-30 minute "Conversing"
+    // stretch with no Idle gap. The no-repeat window above only
+    // blocks the same partner, so it does not stop this. A short
+    // cooldown makes the agent stand Idle ("Finished
+    // conversation") before its next goal, so each conversation
+    // reads as a separate event.
+    // A released agent is Idle and heading nowhere, so clear the
+    // destination too: the release used to leave dest pointing at
+    // the park/cafe entrance, and the inspector showed
+    // "Destination: (10, 8)" for an agent standing still deciding
+    // what to do next — 3,390 Idle agent-minutes with a stale
+    // dest in a 30k-minute probe on seed 42 (3,575 on 777, 3,645
+    // on 20261028), every one of them activity "Finished
+    // conversation". complete() and resetAgent() already null
+    // dest when they leave an agent Idle; the conversation
+    // release was the one path that forgot.
+    this.conv.delete(a.id); a.state = 'Idle'; a.activity = 'Finished conversation'; a.cooldownUntil = this.simMinutes + 5; a.dest = null
+    // A conversation interrupts the agent's Socializing activity,
+    // it does not end it — but the release used to drop the
+    // activity outright. The agent went Idle, picked a new goal
+    // after the cooldown, and its Socialize goal was never
+    // recorded as completed (no GOAL event, no completed++,
+    // nothing in recentActions), even though it spent the time
+    // socializing; an agent that talked to someone therefore
+    // completed fewer goals than one that stood alone. Worse, a
+    // conversation starting near the end of the 40-minute window
+    // ran past activityUntil, and the goal was silently discarded.
+    // If the window already passed, the goal still counts:
+    // record the completion here, but keep the 5-minute cooldown
+    // (complete() alone would set 2) so the anti-chain gap holds.
+    // If time is left, the Idle branch below resumes the activity
+    // once the cooldown passes.
+    const t: any = (a as any)._target
+    if (t?.state === 'Socializing' && a.activityUntil > 0 && a.activityUntil <= this.simMinutes) {
+      this.complete(a)
+      a.state = 'Idle'; a.activity = 'Finished conversation'; a.cooldownUntil = this.simMinutes + 5
+    }
+    // The thought must match the break, not the conversation that
+    // just ended: the release used to leave "Socializing at
+    // Central Park." against state Idle and activity "Finished
+    // conversation", the same stale thought complete() now resets.
+    // The resume branch sets a fresh socializing thought when the
+    // agent goes back out, so this only covers the Idle gap.
+    a.thought = 'Finished conversation.'
+    return true
+  }
   /** Advance simulation by real seconds (already speed-scaled by caller).
    * Time scale: 1 real second at 1x = 1 sim minute. Previously the
    * accumulator added raw seconds, so one sim minute took 60 real
@@ -461,7 +535,10 @@ export class SimEngine {
     while (accumulated.v >= 60) {
       accumulated.v -= 60; this.tick++; this.simMinutes++
       for (const a of this.agents) {
-        if (a.paused) continue
+        // A paused agent's conversation can still end while it is frozen
+        // (see releaseConversation): only the release runs for it — the
+        // drains and decisions below still skip paused agents.
+        if (a.paused) { this.releaseConversation(a); continue }
         // Hunger rises 0.2/min, not 0.25: the 0.25 rate (+360/day) never
         // balanced against meals — a 30-minute meal removes 50 but the
         // agent keeps getting hungrier for those 30 minutes (+7.5), so
@@ -567,67 +644,10 @@ export class SimEngine {
         // instead of tracking tick-for-tick.
         if (a.hunger >= 80 || a.energy <= 10) a.confidence = Math.max(0, a.confidence - 0.3)
         else a.confidence = Math.min(100, a.confidence + 0.1)
-        const conv = this.conv.get(a.id)
-        // A Conversing agent with no conv entry is desynced — this happens
-        // after snapshot/restore, because the conv timer map is not part of
-        // the saved snapshot. Without this it stays Conversing forever:
-        // the decision branches below both skip Conversing agents, and no
-        // timer ever fires to release it.
-        if (a.state === 'Conversing' && (!conv || this.simMinutes >= conv.until)) {
-          // Remember the ex-partner so the pair cannot instantly re-form:
-          // both are still standing at the same entrance, and without
-          // this the next pickGoal can re-pick Socialize there, arrive
-          // instantly and pair them again in the same tick they split.
-          if (conv) this.blockRePair(a.id, conv.other, this.simMinutes + 30)
-          // Visible break after a conversation: without a cooldown the
-          // released agent instantly re-picks Socialize at the same
-          // entrance, arrives instantly (already there) and pairs with
-          // the next agent standing there — chaining distinct 10-minute
-          // conversations into one unbroken 20-30 minute "Conversing"
-          // stretch with no Idle gap. The no-repeat window above only
-          // blocks the same partner, so it does not stop this. A short
-          // cooldown makes the agent stand Idle ("Finished
-          // conversation") before its next goal, so each conversation
-          // reads as a separate event.
-          // A released agent is Idle and heading nowhere, so clear the
-          // destination too: the release used to leave dest pointing at
-          // the park/cafe entrance, and the inspector showed
-          // "Destination: (10, 8)" for an agent standing still deciding
-          // what to do next — 3,390 Idle agent-minutes with a stale
-          // dest in a 30k-minute probe on seed 42 (3,575 on 777, 3,645
-          // on 20261028), every one of them activity "Finished
-          // conversation". complete() and resetAgent() already null
-          // dest when they leave an agent Idle; the conversation
-          // release was the one path that forgot.
-          this.conv.delete(a.id); a.state = 'Idle'; a.activity = 'Finished conversation'; a.cooldownUntil = this.simMinutes + 5; a.dest = null
-          // A conversation interrupts the agent's Socializing activity,
-          // it does not end it — but the release used to drop the
-          // activity outright. The agent went Idle, picked a new goal
-          // after the cooldown, and its Socialize goal was never
-          // recorded as completed (no GOAL event, no completed++,
-          // nothing in recentActions), even though it spent the time
-          // socializing; an agent that talked to someone therefore
-          // completed fewer goals than one that stood alone. Worse, a
-          // conversation starting near the end of the 40-minute window
-          // ran past activityUntil, and the goal was silently discarded.
-          // If the window already passed, the goal still counts:
-          // record the completion here, but keep the 5-minute cooldown
-          // (complete() alone would set 2) so the anti-chain gap holds.
-          // If time is left, the Idle branch below resumes the activity
-          // once the cooldown passes.
-          const t: any = (a as any)._target
-          if (t?.state === 'Socializing' && a.activityUntil > 0 && a.activityUntil <= this.simMinutes) {
-            this.complete(a)
-            a.state = 'Idle'; a.activity = 'Finished conversation'; a.cooldownUntil = this.simMinutes + 5
-          }
-          // The thought must match the break, not the conversation that
-          // just ended: the release used to leave "Socializing at
-          // Central Park." against state Idle and activity "Finished
-          // conversation", the same stale thought complete() now resets.
-          // The resume branch sets a fresh socializing thought when the
-          // agent goes back out, so this only covers the Idle gap.
-          a.thought = 'Finished conversation.'
-        }
+        // Release a conversation whose timer is gone or expired (see
+        // releaseConversation): the desync guard, now shared with the
+        // paused path at the top of this loop.
+        this.releaseConversation(a)
         // Exhaustion interrupt: an agent that hits 0 energy mid-activity
         // stops instead of finishing the shift at zero. Without this,
         // pickGoal's utilities only decide at the START of an activity —
