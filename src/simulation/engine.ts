@@ -108,12 +108,16 @@ export class SimEngine {
   // curiosity, while the other 14 shopped 4-66 times each. The
   // Corner Shop was decorative for nearly half the city. Shop now
   // gains the same kind of time-based bonus Socialize has: +1/hour
-  // since the agent last finished shopping, capped at 30 — enough
-  // for the worst case (Mia: base 48 must clear Socialize's 68
-  // floor) without outbidding a meal at critical hunger (136) or a
-  // night's sleep (90+), and it self-limits the way the loneliness
-  // bonus does: once the bonus is big enough to win a spare hour,
-  // the agent shops and the clock resets.
+  // since the agent last finished shopping, capped at 45 — enough
+  // for the worst case (Mia: base 48 must clear Socialize's 68 floor
+  // plus its +20 low-mood bonus, 88, when she socialized recently;
+  // the old cap of 30 left Shop at 78, below that 88, so on seed 777
+  // she never shopped once in 30k minutes — the same dead-goal
+  // failure the bonus was added to fix) without outbidding a meal at
+  // critical hunger (136) or a night's sleep (90+), and it
+  // self-limits the way the loneliness bonus does: once the bonus is
+  // big enough to win a spare hour, the agent shops and the clock
+  // resets.
   private lastShop = new Map<string, number>()
   // When each agent last finished a Commuting activity, on the
   // simMinutes timeline. Commute used to score a flat 45 + routine *
@@ -274,8 +278,13 @@ export class SimEngine {
     // scaling alone left Shop mathematically unwinnable for the 10
     // agents whose sociability exceeds their curiosity, because
     // Socialize's floor (sociability * 0.8, before its own bonuses)
-    // already beats Shop's maximum for them.
-    candidates.push(['Shop', this.locById('shop'), 'Shopping', 'Shopping', 25, a.personality.curiosity * 0.8 + Math.min(30, (this.simMinutes - (this.lastShop.get(a.id) ?? this.simMinutes)) / 60)])
+    // already beats Shop's maximum for them. The cap is 45, not 30:
+    // Socialize's floor for the most sociable agent (Mia, 68) plus
+    // its +20 low-mood bonus is 88, and a cap of 30 left Mia's Shop
+    // at 78 — below it — so on seed 777 she never shopped once in
+    // 30k minutes. At 45 her Shop reaches 93 and wins a spare hour
+    // when she socialized recently and is in a decent mood.
+    candidates.push(['Shop', this.locById('shop'), 'Shopping', 'Shopping', 25, a.personality.curiosity * 0.8 + Math.min(45, (this.simMinutes - (this.lastShop.get(a.id) ?? this.simMinutes)) / 60)])
     // Commute used to score a flat 45 at rush hour (8 and 17) and 5
     // otherwise, below almost every competing utility in its own
     // window — a morning meal scores hunger * 1.2, typically 48-84

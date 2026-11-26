@@ -986,12 +986,16 @@ describe('engine', () => {
     // shopped once in 30k minutes, exactly the agents with
     // sociability > curiosity, while the other 14 shopped 4-66 times
     // each. Shop now gains +1/hour since the agent last finished
-    // shopping (capped at 30), the same time-based bonus Socialize
+    // shopping (capped at 45), the same time-based bonus Socialize
     // has, so every agent eventually shops in a spare hour — and the
     // bonus only lifts Shop when it has been starved, so it must not
-    // let shopping crowd out work. Thresholds are loose — they catch
+    // let shopping crowd out work. The cap was 30 at first, but that
+    // left Mia's Shop at 78, below Socialize's 68 floor plus its +20
+    // low-mood bonus (88), so on seed 777 she still never shopped
+    // once in 30k minutes — seed 777 is in the list so that exact
+    // case stays covered. Thresholds are loose — they catch
     // a return to a dead goal, not small drift.
-    for (const seed of [11, 42]) {
+    for (const seed of [11, 42, 777]) {
       const e = new SimEngine(seed)
       const acc = { v: 0 }
       const shopMin = new Map(e.agents.map(a => [a.id, 0]))
