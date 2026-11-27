@@ -362,7 +362,22 @@ export class SimEngine {
     this.addMemory(a, 'relationship', `Relationship with ${other.name} improved after talking at ${loc.name}.`, 5, 1, [other.id], loc, ev.id, ['relationship'])
   }
   private arrive(a: Agent) {
-    const t: any = (a as any)._target; if (!t) { a.state = 'Idle'; return }
+    const t: any = (a as any)._target
+    // No target to arrive at: restore() drops a malformed _target, but
+    // the stale-path repair keeps a valid route to a valid destination
+    // (it only checks the route against dest and the target entrance),
+    // so a restored Walking agent can still walk in and arrive here
+    // with nothing to do. The old line set state Idle and returned,
+    // leaving dest pointing at the entrance, activity still "Walking
+    // to …", and the saved activityUntil/cooldownUntil from the
+    // dropped target — an Idle agent showing a destination (the same
+    // stale-dest display complete() and the conversation release
+    // already clear) that then idled until its stale cooldown passed
+    // instead of picking a fresh goal. Clear all of it, the way the
+    // restore repair does for a Walking agent with no route at all,
+    // so the next decision tick picks a fresh goal. Live operation
+    // never reaches this: setGoal always sets a target with a path.
+    if (!t) { a.state = 'Idle'; a.activity = 'Deciding what to do next'; a.dest = null; a.activityUntil = 0; a.cooldownUntil = 0; return }
     const loc: Location = t.loc
     a.state = t.state; a.activity = t.activity; a.activityUntil = this.simMinutes + t.durationMin; a.thought = `${t.activity} at ${loc.name}.`
     this.log('MOVEMENT', a, loc, `${a.name} arrived at ${loc.name} to ${a.goal.toLowerCase()}.`)
