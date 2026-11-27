@@ -117,10 +117,15 @@ export function charPixels(dir: Dir, frame: Frame, hairStyle: string = 'short', 
   if (frame === 'idleB' && dir === 'right') g[9][13] = 'S'
   return g.map(r => r.join(''))
 }
-export function applyAccessory(rows: string[], kind: RolePalette['accessoryKind']): string[] {
+export function applyAccessory(rows: string[], kind: RolePalette['accessoryKind'], dir: Dir = 'down'): string[] {
   const g = rows.map(r => r.split(''))
   if (kind === 'hat') for (let c = 6; c <= 17; c++) { g[0][c] = 'A'; g[1][c] = 'A' }
-  if (kind === 'cap') { for (let c = 8; c <= 15; c++) g[0][c] = 'A'; g[1][18] = 'A'; g[1][19] = 'A' }
+  // Cap brim points at the face: on the right in the right profile, on
+  // the left in the left profile. It used to sit at cols 18-19 in every
+  // direction, so a cap-wearing agent facing left (nose at col 7, hair
+  // at the back right) wore the brim sticking out the back of the head.
+  // The left brim mirrors the right one across the head centre (col 11.5).
+  if (kind === 'cap') { for (let c = 8; c <= 15; c++) g[0][c] = 'A'; if (dir === 'left') { g[1][4] = 'A'; g[1][5] = 'A' } else { g[1][18] = 'A'; g[1][19] = 'A' } }
   if (kind === 'apron') for (let r = 14; r <= 21; r++) { g[r][10] = 'A'; g[r][11] = 'A'; g[r][12] = 'A'; g[r][13] = 'A' }
   if (kind === 'coat') for (let r = 13; r <= 21; r++) { g[r][8] = 'A'; g[r][15] = 'A' }
   return g.map(r => r.join(''))
@@ -128,7 +133,7 @@ export function applyAccessory(rows: string[], kind: RolePalette['accessoryKind'
 export function spritePixels(role: string, dir: Dir, frame: Frame, agentIndex: number): { rows: string[]; colors: Record<string, string> } {
   const p = paletteFor(role)
   const skirt = agentIndex % 4 === 3
-  const rows = applyAccessory(charPixels(dir, frame, HAIR_STYLES[agentIndex % HAIR_STYLES.length], skirt), p.accessoryKind)
+  const rows = applyAccessory(charPixels(dir, frame, HAIR_STYLES[agentIndex % HAIR_STYLES.length], skirt), p.accessoryKind, dir)
   return { rows, colors: paletteColors(p, SKIN_TONES[agentIndex % SKIN_TONES.length], HAIR_COLORS[agentIndex % HAIR_COLORS.length]) }
 }
 export function countPixels(rows: string[], ch: string): number { return rows.join('').split(ch).length - 1 }

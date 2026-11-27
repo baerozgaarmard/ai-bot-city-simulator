@@ -26,6 +26,21 @@ describe('V5 characters', () => {
     expect(countPixels(skirt.rows, 'P')).toBeGreaterThan(0)
     expect(countPixels(skirt.rows, 'S')).toBeGreaterThan(0)
   })
+  it('cap brim points at the face in both profiles, not out the back of the head', () => {
+    // A cap role (Bus Driver, Security Guard, Engineer, Courier) faces
+    // left with the nose at col 7 and right with the nose at col 16, so
+    // the brim (row 1) must sit on the facing side in each profile. It
+    // used to sit at cols 18-19 in every direction, so facing left the
+    // brim stuck out behind the head.
+    const brimCols = (dir: 'left' | 'right') => {
+      const { rows } = spritePixels('Bus Driver', dir, 'idle', 0)
+      const cols: number[] = []
+      ;[...rows[1]].forEach((ch, c) => { if (ch === 'A') cols.push(c) })
+      return cols
+    }
+    expect(brimCols('right')).toEqual([18, 19])
+    expect(brimCols('left')).toEqual([4, 5])
+  })
   it('AgentAvatar uses the same sprite grid as the city (identity stable)', () => {
     // AgentAvatar renders spritePixels(role, 'down', 'idle', index) to canvas;
     // the grid it draws must therefore match the city sprite exactly.
