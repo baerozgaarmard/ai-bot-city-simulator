@@ -41,6 +41,23 @@ describe('V5 characters', () => {
     expect(brimCols('right')).toEqual([18, 19])
     expect(brimCols('left')).toEqual([4, 5])
   })
+  it('cap brim has no sideways protrusion in front/back views', () => {
+    // In the down (front) and up (back) views the brim points at the
+    // viewer / away from the viewer, so there is no side for it to stick
+    // out on: the old else-branch drew it at cols 18-19 in both views,
+    // two 'A' pixels floating detached a column to the right of the head
+    // (row 1, cols 18-19, with col 17 empty) — a stray blob on a head
+    // with no face on that side. Row 1 must hold no 'A' outside the cap
+    // dome (cols 8-15) in either view, in every frame.
+    for (const dir of ['down', 'up'] as const) {
+      for (const frame of ['idle', 'idleB', 'walkA', 'walkB'] as const) {
+        const { rows } = spritePixels('Bus Driver', dir, frame, 0)
+        const cols: number[] = []
+        ;[...rows[1]].forEach((ch, c) => { if (ch === 'A') cols.push(c) })
+        expect(cols).toEqual([])
+      }
+    }
+  })
   it('AgentAvatar uses the same sprite grid as the city (identity stable)', () => {
     // AgentAvatar renders spritePixels(role, 'down', 'idle', index) to canvas;
     // the grid it draws must therefore match the city sprite exactly.

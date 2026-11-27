@@ -125,7 +125,12 @@ export function applyAccessory(rows: string[], kind: RolePalette['accessoryKind'
   // direction, so a cap-wearing agent facing left (nose at col 7, hair
   // at the back right) wore the brim sticking out the back of the head.
   // The left brim mirrors the right one across the head centre (col 11.5).
-  if (kind === 'cap') { for (let c = 8; c <= 15; c++) g[0][c] = 'A'; if (dir === 'left') { g[1][4] = 'A'; g[1][5] = 'A' } else { g[1][18] = 'A'; g[1][19] = 'A' } }
+  // Front and back views get no side brim at all: facing the viewer the
+  // brim points at the viewer (hidden in the cap dome), and facing away
+  // it points away — so the old else-branch left two 'A' pixels floating
+  // detached at cols 18-19 in down/up views, a stray blob on the side of
+  // the head with no face on that side.
+  if (kind === 'cap') { for (let c = 8; c <= 15; c++) g[0][c] = 'A'; if (dir === 'left') { g[1][4] = 'A'; g[1][5] = 'A' } else if (dir === 'right') { g[1][18] = 'A'; g[1][19] = 'A' } }
   if (kind === 'apron') for (let r = 14; r <= 21; r++) { g[r][10] = 'A'; g[r][11] = 'A'; g[r][12] = 'A'; g[r][13] = 'A' }
   if (kind === 'coat') for (let r = 13; r <= 21; r++) { g[r][8] = 'A'; g[r][15] = 'A' }
   return g.map(r => r.join(''))
